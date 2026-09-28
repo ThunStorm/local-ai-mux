@@ -313,6 +313,7 @@ pub async fn create(
     let normalized = NormalizedRequest {
         model: context.model.clone(),
         prompt,
+        messages: Vec::new(),
     };
     let run = state.begin_run();
     if request.stream {

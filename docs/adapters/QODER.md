@@ -6,15 +6,15 @@
 
 ## Supported OS
 
-CLI 官方支持 macOS/Windows；本机仅安装 Qoder 桌面应用，CLI 真实运行未验收。Windows Adapter 已编译检查，仍需实机调用。
+CLI 官方支持 macOS/Windows；本机已安装 Qoder CLI 1.1.64，未在 LocalMux 中显式连接或做真实推理。Windows Adapter 已编译检查，仍需实机调用。
 
 ## Detection
 
-发现引擎检查 PATH 和常见安装位置。只有文件名为 `qoder`/`qoder.exe` 的扫描结果显示可连接；桌面 `.app` 只显示“仅检测到”。
+发现引擎检查 PATH、常见安装位置及 macOS 官方安装器的 `~/.qoder/entry`。只有文件名为 `qoder`/`qoder.exe` 的扫描结果显示可连接；桌面 `.app` 只显示“仅检测到”。
 
 ## Supported versions
 
-本机没有 CLI，无法记录已验证版本；界面标“版本未验证”，连接失败时不宣称支持。
+本机 CLI `--version` 为 1.1.64，但未验证登录/目录/推理；界面标“版本未验证”，连接失败时不宣称支持。
 
 ## Connection/auth strategy
 
@@ -58,7 +58,7 @@ CLI 官方支持 macOS/Windows；本机仅安装 Qoder 桌面应用，CLI 真实
 
 ## Known limitations
 
-本机未安装 Qoder CLI；尚未验证官方 `--list-models --output-format json` 的真实格式与 Qoder Global/CN 登录共享情况。不能把桌面安装或离线 fixture 记为真实 Provider 验收。
+本机已安装 Qoder CLI，但尚未验证 `--list-models --output-format json` 的真实格式与 Qoder Global/CN 登录共享情况。不能把桌面安装或离线 fixture 记为真实 Provider 验收。
 
 ## Fixtures
 

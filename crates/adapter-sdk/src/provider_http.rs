@@ -35,9 +35,13 @@ impl HttpProvider {
         {
             return Err(AdapterError::Unsupported);
         }
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(120))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::none());
+        if matches!(url.host_str(), Some("127.0.0.1" | "localhost")) {
+            builder = builder.no_proxy();
+        }
+        let client = builder
             .build()
             .map_err(|_| AdapterError::ProviderUnavailable)?;
         Ok(Self {
@@ -117,7 +121,7 @@ impl Adapter for HttpProvider {
             .model
             .strip_prefix(&format!("{}/", self.id))
             .ok_or(AdapterError::ModelUnavailable)?;
-        let body = json!({"model":model,"messages":[{"role":"user","content":request.prompt}],"stream":false});
+        let body = json!({"model":model,"messages":request.chat_messages(),"stream":false});
         let response = self
             .response(
                 self.client
@@ -145,7 +149,7 @@ impl Adapter for HttpProvider {
             .model
             .strip_prefix(&format!("{}/", self.id))
             .ok_or(AdapterError::ModelUnavailable)?;
-        let body = json!({"model":model,"messages":[{"role":"user","content":request.prompt}],"stream":true});
+        let body = json!({"model":model,"messages":request.chat_messages(),"stream":true});
         let response = self
             .response(
                 self.client

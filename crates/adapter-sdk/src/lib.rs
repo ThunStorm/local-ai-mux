@@ -3,7 +3,8 @@ pub mod provider_http;
 use async_trait::async_trait;
 use futures_util::{stream, Stream};
 use localmux_domain::{AdapterKind, HealthStatus, ModelDescriptor};
-use localmux_quota::QuotaSnapshot;
+use localmux_quota::{QuotaBucket, QuotaSnapshot};
+use serde::Serialize;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -12,6 +13,35 @@ use tokio::sync::Mutex;
 pub struct NormalizedRequest {
     pub model: String,
     pub prompt: String,
+    pub messages: Vec<NormalizedMessage>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct NormalizedMessage {
+    pub role: String,
+    pub content: String,
+}
+impl NormalizedRequest {
+    pub fn single_user_prompt(&self) -> Result<&str, AdapterError> {
+        if self.messages.is_empty()
+            || (self.messages.len() == 1
+                && self.messages[0].role == "user"
+                && self.messages[0].content == self.prompt)
+        {
+            Ok(&self.prompt)
+        } else {
+            Err(AdapterError::UnsupportedMessages)
+        }
+    }
+    pub fn chat_messages(&self) -> Vec<NormalizedMessage> {
+        if self.messages.is_empty() {
+            vec![NormalizedMessage {
+                role: "user".into(),
+                content: self.prompt.clone(),
+            }]
+        } else {
+            self.messages.clone()
+        }
+    }
 }
 #[derive(Clone, Debug)]
 pub struct NormalizedResponse {
@@ -37,6 +67,8 @@ pub enum AdapterError {
     RateLimited,
     #[error("adapter unsupported")]
     Unsupported,
+    #[error("message roles or history unsupported")]
+    UnsupportedMessages,
     #[error("provider request failed")]
     ProcessFailed,
 }
@@ -49,6 +81,24 @@ pub trait Adapter: Send + Sync {
     async fn list_models(&self) -> Result<Vec<ModelDescriptor>, AdapterError>;
     async fn get_quota(&self) -> Result<Option<QuotaSnapshot>, AdapterError> {
         Ok(None)
+    }
+    async fn get_quotas(&self) -> Result<Vec<QuotaBucket>, AdapterError> {
+        Ok(self
+            .get_quota()
+            .await?
+            .into_iter()
+            .map(|snapshot| QuotaBucket {
+                connection_id: snapshot.connection_id,
+                bucket_id: "legacy".into(),
+                label: "上游额度".into(),
+                remaining: snapshot.remaining,
+                limit: snapshot.limit,
+                unit: snapshot.unit,
+                reset_at: snapshot.reset_at,
+                source: snapshot.source,
+                observed_at: snapshot.observed_at,
+            })
+            .collect())
     }
     async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError>;
     async fn invoke_stream(
@@ -114,8 +164,45 @@ impl Adapter for MockEcho {
             return Err(AdapterError::ModelUnavailable);
         }
         Ok(NormalizedResponse {
-            text: request.prompt,
+            text: if request.messages.is_empty()
+                || (request.messages.len() == 1 && request.messages[0].role == "user")
+            {
+                request.prompt
+            } else {
+                request
+                    .messages
+                    .iter()
+                    .map(|message| format!("{}: {}", message.role, message.content))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
             provider_session_id: None,
         })
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::{AdapterError, NormalizedMessage, NormalizedRequest};
+
+    #[test]
+    fn agent_role_boundary_rejects_history() {
+        let request = NormalizedRequest {
+            model: "codex/model".into(),
+            prompt: "next".into(),
+            messages: vec![
+                NormalizedMessage {
+                    role: "system".into(),
+                    content: "rules".into(),
+                },
+                NormalizedMessage {
+                    role: "user".into(),
+                    content: "next".into(),
+                },
+            ],
+        };
+        assert!(matches!(
+            request.single_user_prompt(),
+            Err(AdapterError::UnsupportedMessages)
+        ));
     }
 }

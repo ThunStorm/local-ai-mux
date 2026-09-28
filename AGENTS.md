@@ -1,6 +1,6 @@
 # LocalMux / 智汇枢 — Agent 导航
 
-当前分支从 `main` 独立建立，按 `LOCALMUX_PROJECT_PLAN.md` 的 Phase 1→8 顺序推进。按需读取文档；不要全库扫描 Markdown。真实 Provider 仅使用稳定公开接口，连接须用户显式发起。
+当前分支已实现原计划 Phase 1–8 的离线代码；下一阶段按 `docs/LOCALMUX_PRODUCT_ALIGNMENT_PLAN_2026-09-28.md` 增量对齐，实际进度看 `docs/HANDOFF.md`。按需读取文档；不要全库扫描 Markdown。真实 Provider 仅使用稳定公开接口，连接须用户显式发起。
 
 ## 运行
 
@@ -11,7 +11,7 @@
 ## 硬约束
 
 - 最终产品是 Tauri 2 桌面应用；默认 API 仅监听 `127.0.0.1:8317`。
-- Agent、Provider、Model、Account 分离；free 分类动态发现，不确定为 `UNKNOWN`。
+- Agent、Provider、Model、Account 分离；本阶段以真实模型 ID 为主，旧 free 路由仅兼容保留，费用或额度不确定为 `UNKNOWN`。
 - Secret 不进 SQLite 明文或日志；第三方凭据必须由用户显式连接。
 - 每个 Phase 同步编译、测试、相关文档与 `CHANGELOG.md` Unreleased。
 
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | 恢复工作 | `docs/HANDOFF.md` | — | — |
 | 产品/范围 | `docs/BRIEF.md`, `LOCALMUX_PROJECT_PLAN.md` | `docs/product/` | — |
-| 桌面 UI | `docs/product/UX_SPEC.md`, `docs/development/BUILD.md` | `apps/desktop/src/` | `pnpm typecheck && pnpm test` |
+| 桌面 UI | `docs/product/UX_SPEC.md`, `docs/product/MACOS_VISUAL_SPEC.md`, `docs/development/BUILD.md` | `apps/desktop/src/` | `pnpm typecheck && pnpm test` |
 | 存储/目录 | `docs/architecture/DATABASE.md` | `crates/storage/`, `crates/core/`, `migrations/` | `cargo test -p localmux-storage -p localmux-core` |
 | 日志 | `docs/architecture/OBSERVABILITY.md` | `crates/telemetry/` | `cargo test -p localmux-telemetry` |
 | 打包/CI | `docs/development/CI.md`, `docs/development/BUILD.md` | `.github/workflows/`, `scripts/` | `bash scripts/verify.sh` |

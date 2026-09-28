@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
@@ -73,7 +74,10 @@ pub fn response_input_text(value: &Value) -> Option<String> {
         return Some(text.to_owned());
     }
     let items = value.as_array()?;
-    let user = items.iter().rev().find(|item| item["role"] == "user")?;
+    if items.len() != 1 || items[0]["role"] != "user" {
+        return None;
+    }
+    let user = &items[0];
     if let Some(text) = user["content"].as_str() {
         return Some(text.to_owned());
     }
@@ -106,6 +110,10 @@ mod responses_tests {
         );
         assert!(super::response_input_text(
             &serde_json::json!([{"role":"user","content":[{"type":"input_image","image_url":"x"}]}])
+        )
+        .is_none());
+        assert!(super::response_input_text(
+            &serde_json::json!([{"role":"user","content":"first"},{"role":"assistant","content":"answer"},{"role":"user","content":"next"}])
         )
         .is_none());
     }

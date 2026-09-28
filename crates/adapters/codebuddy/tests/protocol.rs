@@ -13,6 +13,7 @@ async fn selected_model_stream_and_session_fixture() {
             NormalizedRequest {
                 model: "codebuddy/fixture-model".into(),
                 prompt: "hello".into(),
+                messages: Vec::new(),
             },
             None,
         )

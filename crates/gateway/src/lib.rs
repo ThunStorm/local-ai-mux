@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use futures_util::StreamExt;
-use localmux_adapter_sdk::{Adapter, AdapterError, MockEcho, NormalizedRequest};
+use localmux_adapter_sdk::{Adapter, AdapterError, MockEcho, NormalizedMessage, NormalizedRequest};
 use localmux_api_types::{
     AssistantMessage, ChatRequest, ChatResponse, Choice, ModelList, ModelObject, Usage,
 };
@@ -57,10 +57,10 @@ impl Drop for ActiveRun {
     }
 }
 impl GatewayState {
-    pub fn mock(pool: SqlitePool) -> Self {
+    pub fn new(pool: SqlitePool) -> Self {
         Self {
             pool,
-            adapters: Arc::new(RwLock::new(vec![Arc::new(MockEcho)])),
+            adapters: Arc::new(RwLock::new(Vec::new())),
             policy: Arc::new(RwLock::new(RoutePolicy::default())),
             breaker: Arc::new(CircuitBreaker::default()),
             quotas: Arc::new(QuotaRegistry::new(Duration::from_secs(60))),
@@ -68,6 +68,15 @@ impl GatewayState {
             limiter: Arc::new(KeyRateLimiter::default()),
             active_runs: Arc::new(AtomicUsize::new(0)),
         }
+    }
+    pub fn mock(pool: SqlitePool) -> Self {
+        let state = Self::new(pool);
+        state
+            .adapters
+            .try_write()
+            .expect("new gateway adapters lock")
+            .push(Arc::new(MockEcho));
+        state
     }
     pub fn active_tasks(&self) -> usize {
         self.active_runs.load(Ordering::Relaxed)
@@ -181,8 +190,16 @@ impl GatewayState {
             .find(|adapter| adapter.id() == id)
             .cloned();
         if let Some(adapter) = adapter {
-            if let Ok(Some(snapshot)) = adapter.get_quota().await {
-                if snapshot.source == localmux_quota::QuotaSource::ProviderReported {
+            if let Ok(buckets) = adapter.get_quotas().await {
+                if !buckets.is_empty()
+                    && buckets
+                        .iter()
+                        .all(|item| item.source == localmux_quota::QuotaSource::ProviderReported)
+                    && localmux_storage::save_quota_buckets(&self.pool, id, &buckets)
+                        .await
+                        .is_ok()
+                {
+                    let snapshot = buckets[0].as_snapshot();
                     let _ = localmux_storage::save_quota_snapshot(&self.pool, &snapshot).await;
                     self.quotas.update(snapshot);
                 }
@@ -232,6 +249,43 @@ impl GatewayState {
         )
         .await?;
         Ok((id, key))
+    }
+    pub async fn key_matches_id(&self, id: &str, raw: &str) -> anyhow::Result<bool> {
+        Ok(localmux_storage::active_api_key(&self.pool, &hash_key(raw))
+            .await?
+            .is_some_and(|record| record.id == id))
+    }
+    pub async fn verify_reported_model(&self, model: &str) -> Result<(), AdapterError> {
+        let candidate = self
+            .available_candidates()
+            .await
+            .into_iter()
+            .find(|candidate| candidate.model_id == model)
+            .ok_or(AdapterError::ModelUnavailable)?;
+        let adapter = self
+            .adapters
+            .read()
+            .await
+            .iter()
+            .find(|adapter| adapter.id() == candidate.connection_id)
+            .cloned()
+            .ok_or(AdapterError::ModelUnavailable)?;
+        let _run = self.begin_run();
+        let prompt = "Reply with OK.";
+        let response = adapter
+            .invoke(NormalizedRequest {
+                model: model.into(),
+                prompt: prompt.into(),
+                messages: vec![NormalizedMessage {
+                    role: "user".into(),
+                    content: prompt.into(),
+                }],
+            })
+            .await?;
+        if response.text.trim().is_empty() {
+            return Err(AdapterError::ProcessFailed);
+        }
+        Ok(())
     }
 }
 fn hash_key(key: &str) -> String {
@@ -451,6 +505,13 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             "max_tokens must be positive",
         );
     }
+    if request.temperature.is_some() || request.max_tokens.is_some() {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "LMX_UNSUPPORTED_PARAMETER",
+            "temperature and max_tokens are not supported by this text subset",
+        );
+    }
     if request.messages.iter().any(|message| {
         !matches!(message.role.as_str(), "system" | "user" | "assistant")
             || !message.content.is_string()
@@ -533,6 +594,14 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
     let normalized = NormalizedRequest {
         model: actual_model.clone(),
         prompt: prompt.to_owned(),
+        messages: request
+            .messages
+            .iter()
+            .map(|message| NormalizedMessage {
+                role: message.role.clone(),
+                content: message.content.as_str().unwrap_or_default().to_owned(),
+            })
+            .collect(),
     };
     let run = state.begin_run();
     let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
@@ -646,6 +715,11 @@ fn adapter_error(kind: AdapterError) -> Response {
             StatusCode::NOT_IMPLEMENTED,
             "LMX_ADAPTER_UNSUPPORTED_VERSION",
             "Adapter unsupported",
+        ),
+        AdapterError::UnsupportedMessages => (
+            StatusCode::BAD_REQUEST,
+            "LMX_UNSUPPORTED_MESSAGES",
+            "This model cannot preserve chat roles or message history",
         ),
         AdapterError::ProviderUnavailable | AdapterError::ProcessFailed => (
             StatusCode::BAD_GATEWAY,

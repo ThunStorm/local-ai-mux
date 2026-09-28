@@ -14,6 +14,32 @@ pub enum QuotaSource {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuotaBucket {
+    pub connection_id: String,
+    pub bucket_id: String,
+    pub label: String,
+    pub remaining: Option<f64>,
+    pub limit: Option<f64>,
+    pub unit: Option<String>,
+    pub reset_at: Option<i64>,
+    pub source: QuotaSource,
+    pub observed_at: i64,
+}
+impl QuotaBucket {
+    pub fn as_snapshot(&self) -> QuotaSnapshot {
+        QuotaSnapshot {
+            connection_id: self.connection_id.clone(),
+            remaining: self.remaining,
+            limit: self.limit,
+            unit: self.unit.clone(),
+            reset_at: self.reset_at,
+            source: self.source,
+            observed_at: self.observed_at,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuotaSnapshot {
     pub connection_id: String,
     pub remaining: Option<f64>,
@@ -103,5 +129,28 @@ mod tests {
         assert!(!registry.should_refresh("a", now + Duration::from_secs(1)));
         assert!(registry.should_refresh("b", now + Duration::from_secs(1)));
         assert!(registry.should_refresh("a", now + Duration::from_secs(31)));
+    }
+    #[test]
+    fn separate_windows_keep_independent_resets() {
+        let first = QuotaBucket {
+            connection_id: "codex".into(),
+            bucket_id: "primary".into(),
+            label: "5h".into(),
+            remaining: Some(75.0),
+            limit: Some(100.0),
+            unit: Some("%".into()),
+            reset_at: Some(100),
+            source: QuotaSource::ProviderReported,
+            observed_at: 1,
+        };
+        let second = QuotaBucket {
+            bucket_id: "secondary".into(),
+            label: "weekly".into(),
+            remaining: Some(40.0),
+            reset_at: Some(200),
+            ..first.clone()
+        };
+        assert_eq!(first.as_snapshot().reset_at, Some(100));
+        assert_eq!(second.as_snapshot().reset_at, Some(200));
     }
 }

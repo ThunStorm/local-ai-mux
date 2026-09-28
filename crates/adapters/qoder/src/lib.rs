@@ -41,6 +41,7 @@ impl QoderAdapter {
         request: NormalizedRequest,
         session: Option<&str>,
     ) -> Result<(NormalizedStream, Arc<Mutex<Option<String>>>), AdapterError> {
+        request.single_user_prompt()?;
         let model = request
             .model
             .strip_prefix("qoder/")

@@ -6,17 +6,26 @@ use axum::{
     Json, Router,
 };
 use futures_util::StreamExt;
-use localmux_adapter_sdk::{provider_http::HttpProvider, Adapter, NormalizedRequest};
+use localmux_adapter_sdk::{
+    provider_http::HttpProvider, Adapter, NormalizedMessage, NormalizedRequest,
+};
 use localmux_domain::CostMode;
 use secrecy::SecretString;
 use serde_json::{json, Value};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 async fn models(headers: HeaderMap) -> Json<Value> {
     assert_eq!(headers.get("authorization").unwrap(), "Bearer synthetic");
     Json(json!({"data":[{"id":"actual-model"}]}))
 }
-async fn chat(State(_): State<()>, headers: HeaderMap, Json(body): Json<Value>) -> Response<Body> {
+async fn chat(
+    State(observed): State<Arc<Mutex<Vec<Value>>>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response<Body> {
     assert_eq!(headers.get("authorization").unwrap(), "Bearer synthetic");
+    observed.lock().await.push(body.clone());
     if body["stream"] == true {
         Response::builder().status(StatusCode::OK).header("content-type", "text/event-stream")
             .body(Body::from("data: {\"choices\":[{\"delta\":{\"content\":\"first \"}}]}\r\n\r\ndata: {\"choices\":[{\"delta\":{\"content\":\"second\"}}]}\n\ndata: [DONE]\n\n")).unwrap()
@@ -34,10 +43,11 @@ async fn chat(State(_): State<()>, headers: HeaderMap, Json(body): Json<Value>) 
 async fn provider_uses_exact_configured_endpoint_and_parses_sse() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let observed = Arc::new(Mutex::new(Vec::new()));
     let app = Router::new()
         .route("/models", get(models))
         .route("/chat/completions", post(chat))
-        .with_state(());
+        .with_state(observed.clone());
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let provider =
         HttpProvider::new("glm", base, SecretString::from("synthetic".to_owned())).unwrap();
@@ -47,6 +57,18 @@ async fn provider_uses_exact_configured_endpoint_and_parses_sse() {
     let request = NormalizedRequest {
         model: "glm/actual-model".into(),
         prompt: "hello".into(),
+        messages: [
+            ("system", "keep context"),
+            ("user", "first"),
+            ("assistant", "earlier answer"),
+            ("user", "hello"),
+        ]
+        .into_iter()
+        .map(|(role, content)| NormalizedMessage {
+            role: role.into(),
+            content: content.into(),
+        })
+        .collect(),
     };
     assert_eq!(
         provider.invoke(request.clone()).await.unwrap().text,
@@ -58,6 +80,17 @@ async fn provider_uses_exact_configured_endpoint_and_parses_sse() {
         text.push_str(&delta.unwrap());
     }
     assert_eq!(text, "first second");
+    let expected = json!([
+        {"role":"system","content":"keep context"},
+        {"role":"user","content":"first"},
+        {"role":"assistant","content":"earlier answer"},
+        {"role":"user","content":"hello"}
+    ]);
+    let bodies = observed.lock().await;
+    assert_eq!(bodies.len(), 2);
+    for body in bodies.iter() {
+        assert_eq!(body["messages"], expected);
+    }
     assert!(HttpProvider::new(
         "ark",
         "http://example.com",

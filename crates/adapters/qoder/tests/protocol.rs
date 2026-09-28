@@ -13,6 +13,7 @@ async fn headless_cli_catalog_stream_and_session_fixture() {
             NormalizedRequest {
                 model: "qoder/current-model".into(),
                 prompt: "hello".into(),
+                messages: Vec::new(),
             },
             None,
         )

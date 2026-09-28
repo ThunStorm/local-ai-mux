@@ -58,7 +58,7 @@ CLI 文档覆盖 macOS/Windows；本机 WorkBuddy 桌面包内有 `codebuddy` CL
 
 ## Known limitations
 
-本机没有 CodeBuddy CLI；模型目录当前仅有已选模型，不能满足完整列表要求。WorkBuddy 桌面订阅是否共享 CLI 登录仍未验证。离线 fixture 不能替代真实三上游验收。
+本机 WorkBuddy 包内有 CodeBuddy CLI，未另装独立 CLI；模型目录当前仅有已选模型，不能满足完整列表要求。WorkBuddy 桌面订阅是否共享 CLI 登录仍未验证。离线 fixture 不能替代真实三上游验收。
 
 ## Fixtures
 

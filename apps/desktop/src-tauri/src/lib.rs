@@ -22,12 +22,21 @@ use tokio::sync::Mutex;
 struct GatewayControl {
     state: localmux_gateway::GatewayState,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    default_key_lock: Mutex<()>,
     close_to_tray: AtomicBool,
 }
 
 const MIMO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
 const MIMO_SECRET_REF: &str = "provider.mimo";
 const MIMO_CONNECTION_REF: &str = "os-credential:mimo";
+const DEFAULT_KEY_SETTING: &str = "default_api_key_id";
+
+fn default_key_store() -> OsSecretStore {
+    OsSecretStore::new("app.localmux.desktop")
+}
+fn default_key_ref(id: &str) -> String {
+    format!("api.key.{id}")
+}
 
 fn mimo_store() -> OsSecretStore {
     OsSecretStore::new("app.localmux.desktop")
@@ -43,15 +52,35 @@ fn mimo_adapter(key: String) -> Result<Arc<dyn Adapter>, String> {
     .map_err(|error| error.to_string())
 }
 
+struct AdapterRegistration {
+    id: &'static str,
+    executable_names: &'static [&'static str],
+    create: fn(PathBuf) -> Arc<dyn Adapter>,
+}
+
+const ADAPTERS: &[AdapterRegistration] = &[
+    AdapterRegistration {
+        id: "codex",
+        executable_names: &["codex", "codex.exe"],
+        create: |path| Arc::new(localmux_adapter_codex::CodexAdapter::new(path)),
+    },
+    AdapterRegistration {
+        id: "qoder",
+        executable_names: &["qoder", "qoder.exe"],
+        create: |path| Arc::new(localmux_adapter_qoder::QoderAdapter::new(path)),
+    },
+    AdapterRegistration {
+        id: "codebuddy",
+        executable_names: &["codebuddy", "codebuddy.exe"],
+        create: |path| Arc::new(localmux_adapter_codebuddy::CodeBuddyAdapter::new(path)),
+    },
+];
+
 fn adapter_for(id: &str, path: PathBuf) -> Option<Arc<dyn Adapter>> {
-    match id {
-        "codex" => Some(Arc::new(localmux_adapter_codex::CodexAdapter::new(path))),
-        "qoder" => Some(Arc::new(localmux_adapter_qoder::QoderAdapter::new(path))),
-        "codebuddy" => Some(Arc::new(localmux_adapter_codebuddy::CodeBuddyAdapter::new(
-            path,
-        ))),
-        _ => None,
-    }
+    ADAPTERS
+        .iter()
+        .find(|item| item.id == id)
+        .map(|item| (item.create)(path))
 }
 
 fn connectable_cli_name(id: &str, path: &str) -> bool {
@@ -63,12 +92,10 @@ fn connectable_cli_name(id: &str, path: &str) -> bool {
     else {
         return false;
     };
-    match id {
-        "codex" => name == "codex" || name == "codex.exe",
-        "qoder" => name == "qoder" || name == "qoder.exe",
-        "codebuddy" => name == "codebuddy" || name == "codebuddy.exe",
-        _ => false,
-    }
+    ADAPTERS
+        .iter()
+        .find(|item| item.id == id)
+        .is_some_and(|item| item.executable_names.contains(&name.as_str()))
 }
 
 #[tauri::command]
@@ -328,6 +355,15 @@ async fn quota_snapshots(
 }
 
 #[tauri::command]
+async fn quota_buckets(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<Vec<localmux_quota::QuotaBucket>, String> {
+    localmux_storage::load_quota_buckets(&control.state.pool)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn sessions_list(
     control: tauri::State<'_, GatewayControl>,
 ) -> Result<Vec<localmux_storage::ConversationState>, String> {
@@ -361,6 +397,7 @@ async fn start_gateway(control: &GatewayControl) -> Result<(), String> {
     ))
     .await
     .map_err(|error| error.to_string())?;
+    ensure_default_api_key(control).await?;
     let state = control.state.clone();
     *task = Some(tokio::spawn(async move {
         if let Err(error) = localmux_gateway::serve_on(listener, state).await {
@@ -390,6 +427,168 @@ async fn gateway_status(control: tauri::State<'_, GatewayControl>) -> Result<boo
         .as_ref()
         .is_some_and(|task| !task.is_finished()))
 }
+
+async fn create_stored_default_key(
+    control: &GatewayControl,
+    old_id: Option<&str>,
+    read_only_agent: bool,
+) -> Result<(), String> {
+    let mut policy = localmux_security::KeyRestrictions::default();
+    let mut scopes = vec!["models:read", "chat:invoke", "responses:invoke"];
+    if read_only_agent {
+        policy.execution_profile = localmux_security::ExecutionProfile::ReadOnlyAgent;
+        scopes.push("agent:invoke");
+    }
+    let (id, key) = control
+        .state
+        .create_key_with_policy(&scopes, policy)
+        .await
+        .map_err(|error| error.to_string())?;
+    let reference = default_key_ref(&id);
+    let store = default_key_store();
+    if let Err(error) = store.put(&reference, &key) {
+        let _ = localmux_storage::revoke_api_key(&control.state.pool, &id).await;
+        return Err(error.to_string());
+    }
+    if let Err(error) =
+        localmux_storage::replace_default_api_key(&control.state.pool, &id, old_id).await
+    {
+        let _ = store.delete(&reference);
+        let _ = localmux_storage::revoke_api_key(&control.state.pool, &id).await;
+        return Err(error.to_string());
+    }
+    if let Some(old_id) = old_id {
+        if let Err(error) = store.delete(&default_key_ref(old_id)) {
+            tracing::warn!(%error, "revoked old API key remains in credential store");
+        }
+    }
+    Ok(())
+}
+
+async fn default_key_material(
+    control: &GatewayControl,
+) -> Result<Option<(String, String)>, String> {
+    let Some(id) = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
+        .await
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let Some(key) = default_key_store()
+        .get(&default_key_ref(&id))
+        .map_err(|error| error.to_string())?
+    else {
+        return Err("本机 API Key 凭据已丢失，请显式重建".into());
+    };
+    if !control
+        .state
+        .key_matches_id(&id, &key)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        return Err("本机 API Key 已失效，请显式重建".into());
+    }
+    Ok(Some((id, key)))
+}
+
+async fn ensure_default_api_key(control: &GatewayControl) -> Result<(), String> {
+    let _guard = control.default_key_lock.lock().await;
+    if default_key_material(control).await?.is_none() {
+        create_stored_default_key(control, None, false).await?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn default_api_key_status(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<String, String> {
+    Ok(match default_key_material(&control).await {
+        Ok(Some(_)) => "READY",
+        Ok(None) => "ABSENT",
+        Err(_) => "MISSING",
+    }
+    .into())
+}
+
+#[tauri::command]
+async fn reveal_default_api_key(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<String, String> {
+    default_key_material(&control)
+        .await?
+        .map(|(_, key)| key)
+        .ok_or_else(|| "请先启动 API".to_owned())
+}
+
+#[tauri::command]
+async fn reset_default_api_key(
+    control: tauri::State<'_, GatewayControl>,
+    read_only_agent: bool,
+) -> Result<(), String> {
+    let _guard = control.default_key_lock.lock().await;
+    let old_id = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
+        .await
+        .map_err(|error| error.to_string())?;
+    create_stored_default_key(&control, old_id.as_deref(), read_only_agent).await
+}
+
+#[tauri::command]
+async fn api_setup_models(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<Vec<String>, String> {
+    if !control
+        .task
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|task| !task.is_finished())
+    {
+        return Err("请先启动 API".into());
+    }
+    let (_, key) = default_key_material(&control)
+        .await?
+        .ok_or("本机 API Key 尚未创建")?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .build()
+        .map_err(|_| "无法请求本机 API")?;
+    let response = client
+        .get(gateway_base_url() + "/models")
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|_| "本机 API 未响应")?;
+    if !response.status().is_success() {
+        return Err("本机模型目录不可用，请检查 Key 与服务状态".into());
+    }
+    let value: serde_json::Value = response.json().await.map_err(|_| "本机模型目录格式无效")?;
+    let models = value["data"].as_array().ok_or("本机模型目录格式无效")?;
+    Ok(models
+        .iter()
+        .filter_map(|item| item["id"].as_str())
+        .filter(|id| id.contains('/'))
+        .map(str::to_owned)
+        .collect())
+}
+#[tauri::command]
+async fn verify_model(
+    control: tauri::State<'_, GatewayControl>,
+    model: String,
+) -> Result<u64, String> {
+    let started = std::time::Instant::now();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        control.state.verify_reported_model(&model),
+    )
+    .await
+    .map_err(|_| "模型测试超时".to_owned())?
+    .map_err(|error| error.to_string())?;
+    Ok(started.elapsed().as_millis() as u64)
+}
+
 #[tauri::command]
 fn gateway_base_url() -> String {
     format!("http://127.0.0.1:{}/v1", localmux_gateway::DEFAULT_PORT)
@@ -568,7 +767,7 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(localmux_storage::open(
                 &data_dir.join("localmux.db"),
             ))?;
-            let state = localmux_gateway::GatewayState::mock(pool.clone());
+            let state = localmux_gateway::GatewayState::new(pool.clone());
             if let Some(json) = tauri::async_runtime::block_on(
                 localmux_storage::load_route_policy(&pool, "default"),
             )? {
@@ -601,6 +800,7 @@ pub fn run() {
             app.manage(GatewayControl {
                 state: state.clone(),
                 task: Mutex::new(None),
+                default_key_lock: Mutex::new(()),
                 close_to_tray: AtomicBool::new(tauri::async_runtime::block_on(localmux_storage::setting_bool(&pool, "close_to_tray"))?.unwrap_or(false)),
             });
             let gateway_status = MenuItem::with_id(app, "gateway_status", "API：未启动", false, None::<&str>)?;
@@ -660,6 +860,7 @@ pub fn run() {
             routing_status,
             routing_refresh,
             quota_snapshots,
+            quota_buckets,
             sessions_list,
             session_events,
             gateway_start,
@@ -675,7 +876,12 @@ pub fn run() {
             updater_install,
             generate_api_key,
             revoke_api_key,
-            list_api_keys
+            list_api_keys,
+            default_api_key_status,
+            reveal_default_api_key,
+            reset_default_api_key,
+            api_setup_models,
+            verify_model
         ])
         .run(tauri::generate_context!())
         .expect("failed to run LocalMux desktop application");

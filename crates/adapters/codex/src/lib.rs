@@ -3,7 +3,7 @@ use localmux_adapter_sdk::{
     Adapter, AdapterError, NormalizedRequest, NormalizedResponse, NormalizedStream, SessionStream,
 };
 use localmux_domain::{AdapterKind, CostMode, HealthStatus, ModelDescriptor};
-use localmux_quota::{QuotaSnapshot, QuotaSource};
+use localmux_quota::{QuotaBucket, QuotaSnapshot, QuotaSource};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
@@ -60,6 +60,7 @@ impl CodexAdapter {
         request: NormalizedRequest,
         session: Option<&str>,
     ) -> Result<(AppServer, String, String, Vec<Value>), AdapterError> {
+        request.single_user_prompt()?;
         let model = request
             .model
             .strip_prefix("codex/")
@@ -162,6 +163,13 @@ impl Adapter for CodexAdapter {
         self.connect().await
     }
     async fn get_quota(&self) -> Result<Option<QuotaSnapshot>, AdapterError> {
+        Ok(self
+            .get_quotas()
+            .await?
+            .first()
+            .map(QuotaBucket::as_snapshot))
+    }
+    async fn get_quotas(&self) -> Result<Vec<QuotaBucket>, AdapterError> {
         let mut process = AppServer::start(&self.executable).await?;
         let (result, _) = process
             .request(
@@ -173,7 +181,7 @@ impl Adapter for CodexAdapter {
             .duration_since(UNIX_EPOCH)
             .map_err(|_| AdapterError::ProcessFailed)?
             .as_secs() as i64;
-        Ok(parse_quota(&result, observed_at))
+        Ok(parse_quotas(&result, observed_at))
     }
     async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
         self.invoke_with_session(request, None).await
@@ -437,36 +445,43 @@ fn map_rpc_error(error: &Value) -> AdapterError {
     }
 }
 
+#[cfg(test)]
 fn parse_quota(result: &Value, observed_at: i64) -> Option<QuotaSnapshot> {
+    parse_quotas(result, observed_at)
+        .first()
+        .map(QuotaBucket::as_snapshot)
+}
+
+fn parse_quotas(result: &Value, observed_at: i64) -> Vec<QuotaBucket> {
     if result["ordinaryUsageAllowed"] != true {
-        return None;
+        return Vec::new();
     }
     let bucket = result["rateLimitsByLimitId"]["codex"]
         .as_object()
         .map(|_| &result["rateLimitsByLimitId"]["codex"])
         .unwrap_or(&result["rateLimits"]);
-    let window = bucket["primary"]
-        .as_object()
-        .map(|_| &bucket["primary"])
-        .or_else(|| {
-            bucket["secondary"]
-                .as_object()
-                .map(|_| &bucket["secondary"])
-        })?;
-    let used = window["usedPercent"].as_f64()?;
-    if !used.is_finite() || !(0.0..=100.0).contains(&used) {
-        return None;
-    }
-    let minutes = window["windowDurationMins"].as_u64();
-    Some(QuotaSnapshot {
-        connection_id: "codex".into(),
-        remaining: Some(100.0 - used),
-        limit: Some(100.0),
-        unit: Some(minutes.map_or("% window".into(), |value| format!("% / {value} min"))),
-        reset_at: window["resetsAt"].as_i64(),
-        source: QuotaSource::ProviderReported,
-        observed_at,
-    })
+    ["primary", "secondary"]
+        .into_iter()
+        .filter_map(|id| {
+            let window = &bucket[id];
+            let used = window["usedPercent"].as_f64()?;
+            if !used.is_finite() || !(0.0..=100.0).contains(&used) {
+                return None;
+            }
+            let minutes = window["windowDurationMins"].as_u64();
+            Some(QuotaBucket {
+                connection_id: "codex".into(),
+                bucket_id: id.into(),
+                label: minutes.map_or(id.into(), |value| format!("{value} min window")),
+                remaining: Some(100.0 - used),
+                limit: Some(100.0),
+                unit: Some("%".into()),
+                reset_at: window["resetsAt"].as_i64(),
+                source: QuotaSource::ProviderReported,
+                observed_at,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -503,11 +518,16 @@ mod tests {
     }
     #[test]
     fn official_rate_limit_window_is_a_percentage_not_credit_balance() {
-        let value = json!({"ordinaryUsageAllowed":true,"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":25.0,"windowDurationMins":300,"resetsAt":1700000000}}}});
+        let value = json!({"ordinaryUsageAllowed":true,"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":25.0,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":60.0,"windowDurationMins":10080,"resetsAt":1700600000}}}});
         let quota = parse_quota(&value, 1699999000).unwrap();
         assert_eq!(quota.remaining, Some(75.0));
         assert_eq!(quota.limit, Some(100.0));
         assert_eq!(quota.reset_at, Some(1700000000));
+        let buckets = parse_quotas(&value, 1699999000);
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].remaining, Some(75.0));
+        assert_eq!(buckets[1].remaining, Some(40.0));
+        assert_eq!(buckets[1].reset_at, Some(1700600000));
         assert!(parse_quota(&json!({"rateLimits":{"primary":{"usedPercent":null}}}), 0).is_none());
         assert!(parse_quota(
             &json!({"ordinaryUsageAllowed":false,"rateLimits":{"primary":{"usedPercent":25}}}),

@@ -16,6 +16,7 @@ async fn official_protocol_shape_handles_catalog_turn_and_resume() {
     let request = NormalizedRequest {
         model: "codex/fixture-model".into(),
         prompt: "hello".into(),
+        messages: Vec::new(),
     };
     let response = adapter
         .invoke_with_session(request.clone(), None)
@@ -35,6 +36,7 @@ async fn official_protocol_shape_handles_catalog_turn_and_resume() {
         .invoke_stream(NormalizedRequest {
             model: "codex/fixture-model".into(),
             prompt: "stream".into(),
+            messages: Vec::new(),
         })
         .await
         .unwrap();

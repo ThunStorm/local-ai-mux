@@ -25,11 +25,16 @@ pub async fn open_memory() -> anyhow::Result<SqlitePool> {
     Ok(pool)
 }
 pub async fn setting_bool(pool: &SqlitePool, key: &str) -> anyhow::Result<Option<bool>> {
-    let value: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
-        .bind(key)
-        .fetch_optional(pool)
-        .await?;
+    let value = setting_string(pool, key).await?;
     Ok(value.map(|value| value == "true"))
+}
+pub async fn setting_string(pool: &SqlitePool, key: &str) -> anyhow::Result<Option<String>> {
+    Ok(
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+            .bind(key)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 pub async fn save_setting_bool(pool: &SqlitePool, key: &str, value: bool) -> anyhow::Result<()> {
     sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
@@ -75,6 +80,64 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn default_key_rotation_revokes_old_key_atomically() {
+        let pool = super::open_memory().await.unwrap();
+        for id in ["old", "new"] {
+            super::insert_api_key(&pool, id, &format!("hash-{id}"), &["models:read".into()])
+                .await
+                .unwrap();
+        }
+        super::replace_default_api_key(&pool, "old", None)
+            .await
+            .unwrap();
+        super::replace_default_api_key(&pool, "new", Some("old"))
+            .await
+            .unwrap();
+        assert_eq!(
+            super::setting_string(&pool, "default_api_key_id")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("new")
+        );
+        assert!(!super::api_key_active_by_id(&pool, "old").await.unwrap());
+        assert!(super::api_key_active_by_id(&pool, "new").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn quota_buckets_preserve_independent_windows_on_failed_refresh() {
+        let pool = super::open_memory().await.unwrap();
+        let first = localmux_quota::QuotaBucket {
+            connection_id: "codex".into(),
+            bucket_id: "primary".into(),
+            label: "300 min window".into(),
+            remaining: Some(75.0),
+            limit: Some(100.0),
+            unit: Some("%".into()),
+            reset_at: Some(100),
+            source: localmux_quota::QuotaSource::ProviderReported,
+            observed_at: 1,
+        };
+        let second = localmux_quota::QuotaBucket {
+            bucket_id: "secondary".into(),
+            reset_at: Some(200),
+            ..first.clone()
+        };
+        super::save_quota_buckets(&pool, "codex", &[first.clone(), second])
+            .await
+            .unwrap();
+        let saved = super::load_quota_buckets(&pool).await.unwrap();
+        assert_eq!(saved.len(), 2);
+        assert_ne!(saved[0].reset_at, saved[1].reset_at);
+        assert!(
+            super::save_quota_buckets(&pool, "codex", &[first.clone(), first])
+                .await
+                .is_err()
+        );
+        assert_eq!(super::load_quota_buckets(&pool).await.unwrap().len(), 2);
     }
 }
 
@@ -192,6 +255,85 @@ pub async fn revoke_api_key(pool: &SqlitePool, id: &str) -> anyhow::Result<()> {
         .bind(id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+pub async fn api_key_active_by_id(pool: &SqlitePool, id: &str) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM api_keys WHERE id = ? AND revoked_at IS NULL",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?
+        == 1)
+}
+
+pub async fn save_quota_buckets(
+    pool: &SqlitePool,
+    connection_id: &str,
+    buckets: &[localmux_quota::QuotaBucket],
+) -> anyhow::Result<()> {
+    if buckets.is_empty()
+        || buckets
+            .iter()
+            .any(|item| item.connection_id != connection_id || item.bucket_id.is_empty())
+    {
+        anyhow::bail!("invalid quota buckets");
+    }
+    let mut transaction = pool.begin().await?;
+    sqlx::query("DELETE FROM quota_buckets WHERE connection_id = ?")
+        .bind(connection_id)
+        .execute(&mut *transaction)
+        .await?;
+    for bucket in buckets {
+        let source = serde_json::to_value(bucket.source)?;
+        sqlx::query("INSERT INTO quota_buckets (connection_id, bucket_id, label, remaining, quota_limit, unit, reset_at, source, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(&bucket.connection_id).bind(&bucket.bucket_id).bind(&bucket.label)
+            .bind(bucket.remaining).bind(bucket.limit).bind(&bucket.unit).bind(bucket.reset_at)
+            .bind(source.as_str().ok_or_else(|| anyhow::anyhow!("invalid quota source"))?)
+            .bind(bucket.observed_at).execute(&mut *transaction).await?;
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
+pub async fn load_quota_buckets(
+    pool: &SqlitePool,
+) -> anyhow::Result<Vec<localmux_quota::QuotaBucket>> {
+    use sqlx::Row;
+    let rows = sqlx::query("SELECT connection_id, bucket_id, label, remaining, quota_limit, unit, reset_at, source, observed_at FROM quota_buckets ORDER BY connection_id, bucket_id")
+        .fetch_all(pool).await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(localmux_quota::QuotaBucket {
+                connection_id: row.try_get("connection_id")?,
+                bucket_id: row.try_get("bucket_id")?,
+                label: row.try_get("label")?,
+                remaining: row.try_get("remaining")?,
+                limit: row.try_get("quota_limit")?,
+                unit: row.try_get("unit")?,
+                reset_at: row.try_get("reset_at")?,
+                source: serde_json::from_value(serde_json::Value::String(row.try_get("source")?))?,
+                observed_at: row.try_get("observed_at")?,
+            })
+        })
+        .collect()
+}
+
+pub async fn replace_default_api_key(
+    pool: &SqlitePool,
+    new_id: &str,
+    old_id: Option<&str>,
+) -> anyhow::Result<()> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('default_api_key_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(new_id).execute(&mut *transaction).await?;
+    if let Some(old_id) = old_id {
+        sqlx::query("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ?")
+            .bind(old_id)
+            .execute(&mut *transaction)
+            .await?;
+    }
+    transaction.commit().await?;
     Ok(())
 }
 

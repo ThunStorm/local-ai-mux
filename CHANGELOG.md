@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Product alignment
+
+- Define a macOS visual system and rebuild the desktop shell with fixed sidebar navigation, compact searchable application rows, an API configuration flow, explicit light/dark tokens, and a resizable native window.
+- Add a factual connection overview and next action, reset scroll position on navigation, and keep the appearance menu inside a narrow window.
+
+- Preserve ordered Chat roles/history for HTTP providers; Agent bridges now reject unsupported multi-message requests with an explicit 400 instead of silently dropping context. Reject unsupported Chat parameters and multi-item Responses input.
+- Record the desktop-subscription-first scope and distinguish documented, mock-tested, and live-verified Adapter capabilities.
+- Use a static desktop Adapter registry, keep the production Gateway free of Mock models, and add a vault-backed default local API key with explicit rotation and a one-page model/config copy flow. Move legacy routing and sessions behind Advanced.
+- Group macOS app bundles and CLI candidates into one application card, retaining runtime paths and diagnostics instead of displaying them as separate products.
+- Offer an explicitly triggered short real-model test; only a successful upstream response marks that model verified for the current UI session.
+- Persist separate Codex primary/secondary usage windows in a new quota-bucket migration, keep the legacy single snapshot for routing, and show stale/unknown state on app cards.
+- Keep loopback API and local HTTP Provider requests out of system proxies, including their bearer keys.
+
 ### Added after Phase 8
 
 - Detect WorkBuddy's bundled official CodeBuddy CLI, expose an explicit Xiaomi MiMo API Key connection, read the Codex App Server quota window, and show quota status for every connected service even when the source reports no balance.

@@ -7,10 +7,33 @@ use localmux_gateway::{router, GatewayState};
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn desktop_gateway_has_no_synthetic_model_before_connection() {
+    let pool = localmux_storage::open_memory().await.unwrap();
+    let state = GatewayState::new(pool.clone());
+    assert!(state.verify_reported_model("mock/echo").await.is_err());
+    let (_, key) = state.create_key(&["models:read"]).await.unwrap();
+    let response = router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/v1/models")
+                .header("authorization", format!("Bearer {key}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["data"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn mock_api_requires_key_and_supports_chat_stream_and_revocation() {
     let path = std::env::temp_dir().join(format!("localmux-gateway-{}.db", uuid::Uuid::new_v4()));
     let pool = localmux_storage::open(&path).await.unwrap();
     let state = GatewayState::mock(pool.clone());
+    state.verify_reported_model("mock/echo").await.unwrap();
     let app = router(state.clone());
     let response = app
         .clone()
@@ -61,6 +84,7 @@ async fn mock_api_requires_key_and_supports_chat_stream_and_revocation() {
         )
         .unwrap();
         assert!(body.contains("hello"));
+        assert!(body.contains("context"));
         if stream {
             assert!(body.contains("data: [DONE]"));
         } else {
@@ -236,6 +260,26 @@ async fn three_offline_adapters_merge_models_and_route_without_collisions() {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["choices"][0]["message"]["content"], expected);
+        for stream in [false, true] {
+            let request = Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("authorization", format!("Bearer {key}"))
+                .body(Body::from(
+                    serde_json::json!({"model":model,"stream":stream,"messages":[
+                        {"role":"system","content":"keep context"},
+                        {"role":"user","content":"first"},
+                        {"role":"assistant","content":"earlier answer"},
+                        {"role":"user","content":"hello"}
+                    ]})
+                    .to_string(),
+                ))
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{model}");
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert!(String::from_utf8_lossy(&body).contains("LMX_UNSUPPORTED_MESSAGES"));
+        }
     }
     pool.close().await;
     std::fs::remove_file(path).ok();

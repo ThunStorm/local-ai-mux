@@ -30,7 +30,7 @@ macOS 与 Windows 的可执行文件路径均可检测；本机仅在 macOS 上�
 
 ## Quota discovery
 
-使用公开 App Server `account/rateLimits/read`，优先读取 `rateLimitsByLimitId.codex`，缺失时读兼容字段 `rateLimits`。只有 `ordinaryUsageAllowed=true` 且窗口 `usedPercent` 合法时，上报剩余百分比、窗口时长和重置时间；这不是账户 Credits 余额。缺失或后端未确认可用时保持未知。
+使用公开 App Server `account/rateLimits/read`，优先读取 `rateLimitsByLimitId.codex`，缺失时读兼容字段 `rateLimits`。只有 `ordinaryUsageAllowed=true` 且窗口 `usedPercent` 合法时，分别上报 primary 与 secondary 的剩余百分比、窗口时长和重置时间；旧单快照接口只取首个有效窗口以兼容旧路由。这不是账户 Credits 余额，两个窗口不相加。缺失或后端未确认可用时保持未知，旧观测超时后标为过期。
 
 ## Free-tier detection
 
