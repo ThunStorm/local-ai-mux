@@ -1,0 +1,42 @@
+[package]
+name = "localmux-desktop"
+version = "0.1.0"
+description = "LocalMux desktop shell"
+authors = ["LocalMux contributors"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "localmux_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-updater = "2"
+localmux-core = { path = "../../../crates/core" }
+localmux-adapter-codex = { path = "../../../crates/adapters/codex" }
+localmux-adapter-qoder = { path = "../../../crates/adapters/qoder" }
+localmux-adapter-codebuddy = { path = "../../../crates/adapters/codebuddy" }
+localmux-adapter-sdk = { path = "../../../crates/adapter-sdk" }
+localmux-discovery = { path = "../../../crates/discovery" }
+localmux-gateway = { path = "../../../crates/gateway" }
+localmux-quota = { path = "../../../crates/quota" }
+localmux-router = { path = "../../../crates/router" }
+localmux-security = { path = "../../../crates/security" }
+localmux-secrets = { path = "../../../crates/secrets" }
+localmux-storage = { path = "../../../crates/storage" }
+localmux-telemetry = { path = "../../../crates/telemetry" }
+tracing = "0.1"
+tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+secrecy = "0.10"

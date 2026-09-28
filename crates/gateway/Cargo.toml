@@ -1,0 +1,39 @@
+[package]
+name = "localmux-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+async-stream = "0.3"
+axum = "0.8"
+futures-util = "0.3"
+localmux-adapter-sdk = { path = "../adapter-sdk" }
+localmux-api-types = { path = "../api-types" }
+localmux-domain = { path = "../domain" }
+localmux-quota = { path = "../quota" }
+localmux-router = { path = "../router" }
+localmux-security = { path = "../security" }
+localmux-storage = { path = "../storage" }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+localmux-adapter-codex = { path = "../adapters/codex" }
+localmux-adapter-qoder = { path = "../adapters/qoder" }
+localmux-adapter-codebuddy = { path = "../adapters/codebuddy" }
+async-trait = "0.1"
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[features]
+compat-harness = []
+
+[[bin]]
+name = "localmux-compat-server"
+path = "src/bin/compat_server.rs"
+required-features = ["compat-harness"]

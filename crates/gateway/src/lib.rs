@@ -1,0 +1,657 @@
+mod responses;
+
+use axum::{
+    body::Bytes,
+    extract::State,
+    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse, Response,
+    },
+    routing::{get, post},
+    Json, Router,
+};
+use futures_util::StreamExt;
+use localmux_adapter_sdk::{Adapter, AdapterError, MockEcho, NormalizedRequest};
+use localmux_api_types::{
+    AssistantMessage, ChatRequest, ChatResponse, Choice, ModelList, ModelObject, Usage,
+};
+use localmux_domain::{AdapterKind, CostMode, HealthStatus, ModelDescriptor};
+use localmux_quota::{QuotaRegistry, QuotaSnapshot};
+use localmux_router::{CircuitBreaker, RouteCandidate, RouteError, RoutePolicy};
+use localmux_security::{KeyRateLimiter, KeyRestrictions};
+use sha2::{Digest, Sha256};
+use sqlx::SqlitePool;
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    net::Ipv4Addr,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tokio::sync::{Mutex, RwLock};
+use uuid::Uuid;
+
+pub const DEFAULT_PORT: u16 = 8317;
+const MAX_BODY: usize = 1024 * 1024;
+type CatalogCache = Arc<Mutex<HashMap<String, (Instant, Vec<ModelDescriptor>)>>>;
+
+#[derive(Clone)]
+pub struct GatewayState {
+    pub pool: SqlitePool,
+    adapters: Arc<RwLock<Vec<Arc<dyn Adapter>>>>,
+    policy: Arc<RwLock<RoutePolicy>>,
+    breaker: Arc<CircuitBreaker>,
+    quotas: Arc<QuotaRegistry>,
+    catalog: CatalogCache,
+    limiter: Arc<KeyRateLimiter>,
+    active_runs: Arc<AtomicUsize>,
+}
+struct ActiveRun(Arc<AtomicUsize>);
+impl Drop for ActiveRun {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+impl GatewayState {
+    pub fn mock(pool: SqlitePool) -> Self {
+        Self {
+            pool,
+            adapters: Arc::new(RwLock::new(vec![Arc::new(MockEcho)])),
+            policy: Arc::new(RwLock::new(RoutePolicy::default())),
+            breaker: Arc::new(CircuitBreaker::default()),
+            quotas: Arc::new(QuotaRegistry::new(Duration::from_secs(60))),
+            catalog: Arc::new(Mutex::new(HashMap::new())),
+            limiter: Arc::new(KeyRateLimiter::default()),
+            active_runs: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+    pub fn active_tasks(&self) -> usize {
+        self.active_runs.load(Ordering::Relaxed)
+    }
+    pub fn warning_count(&self) -> usize {
+        self.breaker.open_count(Instant::now())
+    }
+    fn begin_run(&self) -> ActiveRun {
+        self.active_runs.fetch_add(1, Ordering::Relaxed);
+        ActiveRun(self.active_runs.clone())
+    }
+    pub async fn invalidate_catalog(&self, id: &str) {
+        self.catalog.lock().await.remove(id);
+    }
+    pub async fn seed_catalog(&self, id: &str, models: Vec<ModelDescriptor>) {
+        self.catalog
+            .lock()
+            .await
+            .insert(id.to_owned(), (Instant::now(), models));
+    }
+    pub async fn invalidate_all_catalog(&self) {
+        self.catalog
+            .lock()
+            .await
+            .retain(|_, (time, _)| time.elapsed() < Duration::from_secs(30));
+    }
+    async fn available_candidates(&self) -> Vec<RouteCandidate> {
+        let adapters = self.adapters.read().await.clone();
+        let mut candidates = Vec::new();
+        for adapter in adapters {
+            let health = adapter.health().await;
+            if !matches!(health, HealthStatus::Healthy | HealthStatus::Degraded) {
+                continue;
+            }
+            // ponytail: one catalog lock serializes provider refreshes; use per-connection locks if measured latency requires it.
+            let mut cache = self.catalog.lock().await;
+            let models = if let Some((_, models)) = cache
+                .get(adapter.id())
+                .filter(|(time, _)| time.elapsed() < Duration::from_secs(300))
+            {
+                models.clone()
+            } else {
+                match adapter.list_models().await {
+                    Ok(models) => {
+                        cache.insert(adapter.id().into(), (Instant::now(), models.clone()));
+                        models
+                    }
+                    Err(_) => {
+                        cache.remove(adapter.id());
+                        continue;
+                    }
+                }
+            };
+            drop(cache);
+            for model in models {
+                candidates.push(RouteCandidate {
+                    model_id: model.id,
+                    connection_id: adapter.id().into(),
+                    cost_mode: model.cost_mode,
+                    quota_multiplier: None,
+                    reserve_available: self
+                        .quotas
+                        .get(adapter.id())
+                        .is_some_and(|snapshot| snapshot.fresh_confirmed_available(now(), 600)),
+                    health: health.clone(),
+                });
+            }
+        }
+        candidates
+    }
+    pub async fn route_status(&self) -> Vec<(String, Option<String>)> {
+        let candidates = self.available_candidates().await;
+        let policy = self.route_policy().await;
+        ["free", "cheap", "balanced", "best"]
+            .into_iter()
+            .map(|alias| {
+                let target = localmux_router::select(
+                    alias,
+                    &candidates,
+                    &policy,
+                    &self.breaker,
+                    Instant::now(),
+                )
+                .ok()
+                .map(|candidate| candidate.model_id.clone());
+                (alias.to_owned(), target)
+            })
+            .collect()
+    }
+    pub async fn route_policy(&self) -> RoutePolicy {
+        self.policy.read().await.clone()
+    }
+    pub async fn set_route_policy(&self, policy: RoutePolicy) {
+        *self.policy.write().await = policy;
+    }
+    pub fn quota_snapshot(&self, id: &str) -> Option<QuotaSnapshot> {
+        self.quotas.get(id)
+    }
+    pub fn restore_quota_snapshot(&self, snapshot: QuotaSnapshot) {
+        self.quotas.update(snapshot);
+    }
+    pub async fn refresh_quota_for(&self, id: &str, force: bool) {
+        if !force && !self.quotas.should_refresh(id, Instant::now()) {
+            return;
+        }
+        let adapter = self
+            .adapters
+            .read()
+            .await
+            .iter()
+            .find(|adapter| adapter.id() == id)
+            .cloned();
+        if let Some(adapter) = adapter {
+            if let Ok(Some(snapshot)) = adapter.get_quota().await {
+                if snapshot.source == localmux_quota::QuotaSource::ProviderReported {
+                    let _ = localmux_storage::save_quota_snapshot(&self.pool, &snapshot).await;
+                    self.quotas.update(snapshot);
+                }
+            }
+        }
+    }
+    pub async fn refresh_quotas(&self, force: bool) {
+        let adapters = self.adapters.read().await.clone();
+        for adapter in adapters {
+            self.refresh_quota_for(adapter.id(), force).await;
+        }
+    }
+    pub async fn register(&self, adapter: Arc<dyn Adapter>) {
+        self.invalidate_catalog(adapter.id()).await;
+        let mut adapters = self.adapters.write().await;
+        adapters.retain(|current| current.id() != adapter.id());
+        adapters.push(adapter);
+    }
+    pub async fn unregister(&self, id: &str) {
+        self.invalidate_catalog(id).await;
+        self.adapters
+            .write()
+            .await
+            .retain(|adapter| adapter.id() != id);
+    }
+    pub async fn create_key(&self, scopes: &[&str]) -> anyhow::Result<(String, String)> {
+        self.create_key_with_policy(scopes, KeyRestrictions::default())
+            .await
+    }
+    pub async fn create_key_with_policy(
+        &self,
+        scopes: &[&str],
+        policy: KeyRestrictions,
+    ) -> anyhow::Result<(String, String)> {
+        if !policy.valid() {
+            anyhow::bail!("invalid API key policy");
+        }
+        let id = Uuid::new_v4().to_string();
+        let key = format!("lmx_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+        let names: Vec<String> = scopes.iter().map(|scope| (*scope).to_owned()).collect();
+        localmux_storage::insert_api_key_with_policy(
+            &self.pool,
+            &id,
+            &hash_key(&key),
+            &names,
+            &policy,
+        )
+        .await?;
+        Ok((id, key))
+    }
+}
+fn hash_key(key: &str) -> String {
+    format!("{:x}", Sha256::digest(key.as_bytes()))
+}
+fn now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+pub fn router(state: GatewayState) -> Router {
+    Router::new()
+        .route(
+            "/api/health",
+            get(|| async { Json(serde_json::json!({"status":"ok"})) }),
+        )
+        .route("/v1/models", get(models))
+        .route("/v1/chat/completions", post(chat))
+        .route("/v1/responses", post(responses::create))
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY))
+        .with_state(state)
+}
+pub async fn serve(state: GatewayState, port: u16) -> std::io::Result<()> {
+    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await?;
+    serve_on(listener, state).await
+}
+pub async fn serve_on(
+    listener: tokio::net::TcpListener,
+    state: GatewayState,
+) -> std::io::Result<()> {
+    axum::serve(listener, router(state)).await
+}
+
+async fn authorized(
+    state: &GatewayState,
+    headers: &HeaderMap,
+    scope: &str,
+) -> Result<localmux_storage::ApiKeyRecord, Box<Response>> {
+    let Some(key) = headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
+        return Err(Box::new(error(
+            StatusCode::UNAUTHORIZED,
+            "LMX_AUTH_REQUIRED",
+            "API key required",
+        )));
+    };
+    if !key.starts_with("lmx_") {
+        return Err(Box::new(error(
+            StatusCode::UNAUTHORIZED,
+            "LMX_AUTH_REQUIRED",
+            "Invalid API key",
+        )));
+    }
+    match localmux_storage::active_api_key(&state.pool, &hash_key(key)).await {
+        Ok(Some(record))
+            if record.scopes.iter().any(|item| item == scope) && record.policy.valid() =>
+        {
+            if state.limiter.allow(
+                &record.id,
+                record.policy.rate_limit_per_minute,
+                Instant::now(),
+            ) {
+                Ok(record)
+            } else {
+                Err(Box::new(error(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "LMX_RATE_LIMITED",
+                    "Local API key rate limit exceeded",
+                )))
+            }
+        }
+        Ok(_) => Err(Box::new(error(
+            StatusCode::FORBIDDEN,
+            "LMX_PERMISSION_DENIED",
+            "Key is invalid, revoked, or lacks scope",
+        ))),
+        Err(_) => Err(Box::new(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "LMX_INTERNAL_ERROR",
+            "Credential lookup failed",
+        ))),
+    }
+}
+fn error(status: StatusCode, code: &str, message: &str) -> Response {
+    (status, Json(serde_json::json!({"error":{"message":message,"type":"localmux_error","code":code,"error_code":code}}))).into_response()
+}
+fn target_allowed(
+    record: &localmux_storage::ApiKeyRecord,
+    requested: &str,
+    actual: &str,
+    adapter: &dyn Adapter,
+) -> bool {
+    record
+        .policy
+        .permits(requested, actual, adapter.id(), adapter.kind())
+        && (adapter.kind() != AdapterKind::Agent
+            || record.scopes.iter().any(|scope| scope == "agent:invoke"))
+}
+async fn models(State(state): State<GatewayState>, headers: HeaderMap) -> Response {
+    let key = match authorized(&state, &headers, "models:read").await {
+        Ok(key) => key,
+        Err(response) => return *response,
+    };
+    let candidates = state.available_candidates().await;
+    let adapters = state.adapters.read().await.clone();
+    let permitted = |candidate: &RouteCandidate, requested: &str| {
+        adapters
+            .iter()
+            .find(|adapter| adapter.id() == candidate.connection_id)
+            .is_some_and(|adapter| {
+                target_allowed(&key, requested, &candidate.model_id, adapter.as_ref())
+            })
+    };
+    let mut data: Vec<ModelObject> = candidates
+        .iter()
+        .filter(|candidate| permitted(candidate, &candidate.model_id))
+        .map(|candidate| ModelObject {
+            id: candidate.model_id.clone(),
+            object: "model",
+            created: 0,
+            owned_by: candidate.connection_id.clone(),
+        })
+        .collect();
+    let policy = state.route_policy().await;
+    for alias in ["free", "cheap", "balanced", "best"] {
+        if localmux_router::select(alias, &candidates, &policy, &state.breaker, Instant::now())
+            .is_ok_and(|candidate| permitted(candidate, alias))
+        {
+            data.push(ModelObject {
+                id: alias.into(),
+                object: "model",
+                created: 0,
+                owned_by: "localmux".into(),
+            });
+        }
+    }
+    Json(ModelList {
+        object: "list",
+        data,
+    })
+    .into_response()
+}
+fn route_error(kind: RouteError) -> Response {
+    match kind {
+        RouteError::FreePoolExhausted => error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "LMX_FREE_POOL_EXHAUSTED",
+            "No confirmed free model is available",
+        ),
+        RouteError::ModelUnavailable | RouteError::NoEligibleRoute => error(
+            StatusCode::NOT_FOUND,
+            "LMX_MODEL_UNAVAILABLE",
+            "No eligible model route",
+        ),
+    }
+}
+fn breaker_error(state: &GatewayState, adapter_id: &str, kind: &AdapterError) {
+    if matches!(
+        kind,
+        AdapterError::RateLimited | AdapterError::QuotaExhausted
+    ) {
+        let state = state.clone();
+        let id = adapter_id.to_owned();
+        tokio::spawn(async move {
+            state.invalidate_catalog(&id).await;
+            state.refresh_quota_for(&id, false).await;
+        });
+    }
+    let duration = match kind {
+        AdapterError::RateLimited => Some(Duration::from_secs(60)),
+        AdapterError::QuotaExhausted => Some(Duration::from_secs(300)),
+        AdapterError::ProviderUnavailable | AdapterError::ProcessFailed => {
+            Some(Duration::from_secs(30))
+        }
+        _ => None,
+    };
+    if let Some(duration) = duration {
+        state.breaker.open(adapter_id, Instant::now(), duration);
+    }
+}
+async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes) -> Response {
+    let key = match authorized(&state, &headers, "chat:invoke").await {
+        Ok(key) => key,
+        Err(response) => return *response,
+    };
+    let request: ChatRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "LMX_INVALID_REQUEST",
+                "Malformed chat request",
+            )
+        }
+    };
+    if request.model.is_empty()
+        || request.messages.is_empty()
+        || request
+            .temperature
+            .is_some_and(|v| !v.is_finite() || !(0.0..=2.0).contains(&v))
+    {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "LMX_INVALID_REQUEST",
+            "Invalid model, messages, or temperature",
+        );
+    }
+    if request.max_tokens == Some(0) {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "LMX_INVALID_REQUEST",
+            "max_tokens must be positive",
+        );
+    }
+    if request.messages.iter().any(|message| {
+        !matches!(message.role.as_str(), "system" | "user" | "assistant")
+            || !message.content.is_string()
+    }) {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "LMX_INVALID_REQUEST",
+            "Only text system, user, and assistant messages are supported",
+        );
+    }
+    let Some(prompt) = request
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.role == "user")
+        .and_then(|message| message.content.as_str())
+    else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "LMX_INVALID_REQUEST",
+            "A user message is required",
+        );
+    };
+    let adapters = state.adapters.read().await.clone();
+    let requested = request.model.as_str();
+    let virtual_route = matches!(requested, "free" | "cheap" | "balanced" | "best");
+    let actual_model = if virtual_route {
+        let candidates = state.available_candidates().await;
+        let policy = state.route_policy().await;
+        match localmux_router::select(
+            requested,
+            &candidates,
+            &policy,
+            &state.breaker,
+            Instant::now(),
+        ) {
+            Ok(candidate) => candidate.model_id.clone(),
+            Err(kind) => return route_error(kind),
+        }
+    } else {
+        request.model.clone()
+    };
+    let Some(adapter) = adapters
+        .iter()
+        .find(|adapter| actual_model.starts_with(&format!("{}/", adapter.id())))
+    else {
+        return error(
+            StatusCode::NOT_FOUND,
+            "LMX_MODEL_UNAVAILABLE",
+            "Model unavailable",
+        );
+    };
+    if !target_allowed(&key, &request.model, &actual_model, adapter.as_ref()) {
+        return error(
+            StatusCode::FORBIDDEN,
+            "LMX_PERMISSION_DENIED",
+            "API key cannot invoke this route",
+        );
+    }
+    let adapter_id = adapter.id().to_owned();
+    if !virtual_route {
+        let exact = [RouteCandidate {
+            model_id: actual_model.clone(),
+            connection_id: adapter_id.clone(),
+            cost_mode: CostMode::Unknown,
+            quota_multiplier: None,
+            reserve_available: false,
+            health: adapter.health().await,
+        }];
+        if let Err(kind) = localmux_router::select(
+            &actual_model,
+            &exact,
+            &state.route_policy().await,
+            &state.breaker,
+            Instant::now(),
+        ) {
+            return route_error(kind);
+        }
+    }
+    let normalized = NormalizedRequest {
+        model: actual_model.clone(),
+        prompt: prompt.to_owned(),
+    };
+    let run = state.begin_run();
+    let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
+    let created = now();
+    if request.stream {
+        let mut provider_stream =
+            match tokio::time::timeout(Duration::from_secs(30), adapter.invoke_stream(normalized))
+                .await
+            {
+                Ok(Ok(stream)) => stream,
+                Ok(Err(kind)) => {
+                    breaker_error(&state, &adapter_id, &kind);
+                    return adapter_error(kind);
+                }
+                Err(_) => {
+                    state
+                        .breaker
+                        .open(&adapter_id, Instant::now(), Duration::from_secs(30));
+                    return error(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "LMX_PROCESS_TIMEOUT",
+                        "Upstream first response timed out",
+                    );
+                }
+            };
+        let model = actual_model.clone();
+        let route_state = state.clone();
+        let events = async_stream::stream! {
+            let _run = run;
+            let role = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]});
+            yield Ok::<Event, Infallible>(Event::default().data(role.to_string()));
+            let mut first = true;
+            let mut failed = false;
+            loop {
+                let wait = if first { Duration::from_secs(30) } else { Duration::from_secs(120) };
+                match tokio::time::timeout(wait, provider_stream.next()).await {
+                    Ok(Some(Ok(delta))) => {
+                        first = false;
+                        let chunk = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"content":delta},"finish_reason":null}]});
+                        yield Ok(Event::default().data(chunk.to_string()));
+                    },
+                    Ok(None) => { route_state.breaker.success(&adapter_id); break; },
+                    Ok(Some(Err(kind))) => { breaker_error(&route_state, &adapter_id, &kind); failed = true; break; },
+                    Err(_) => { route_state.breaker.open(&adapter_id, Instant::now(), Duration::from_secs(30)); failed = true; break; },
+                }
+            }
+            if failed {
+                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":"LMX_PROVIDER_UNAVAILABLE"}}).to_string()));
+            } else {
+                let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+                yield Ok(Event::default().data(last.to_string()));
+            }
+            yield Ok(Event::default().data("[DONE]"));
+        };
+        return Sse::new(events).into_response();
+    }
+    let text = match adapter.invoke(normalized).await {
+        Ok(response) => {
+            state.breaker.success(&adapter_id);
+            response.text
+        }
+        Err(error_kind) => {
+            breaker_error(&state, &adapter_id, &error_kind);
+            return adapter_error(error_kind);
+        }
+    };
+    Json(ChatResponse {
+        id,
+        object: "chat.completion",
+        created,
+        model: actual_model,
+        choices: vec![Choice {
+            index: 0,
+            message: AssistantMessage {
+                role: "assistant",
+                content: text,
+            },
+            finish_reason: "stop",
+        }],
+        usage: Usage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        },
+    })
+    .into_response()
+}
+fn adapter_error(kind: AdapterError) -> Response {
+    let (status, code, message) = match kind {
+        AdapterError::AuthRequired => (
+            StatusCode::UNAUTHORIZED,
+            "LMX_AUTH_REQUIRED",
+            "Provider authentication required",
+        ),
+        AdapterError::ModelUnavailable => (
+            StatusCode::NOT_FOUND,
+            "LMX_MODEL_UNAVAILABLE",
+            "Model unavailable",
+        ),
+        AdapterError::QuotaExhausted => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "LMX_QUOTA_EXHAUSTED",
+            "Provider quota exhausted",
+        ),
+        AdapterError::RateLimited => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "LMX_RATE_LIMITED",
+            "Provider rate limited",
+        ),
+        AdapterError::Unsupported => (
+            StatusCode::NOT_IMPLEMENTED,
+            "LMX_ADAPTER_UNSUPPORTED_VERSION",
+            "Adapter unsupported",
+        ),
+        AdapterError::ProviderUnavailable | AdapterError::ProcessFailed => (
+            StatusCode::BAD_GATEWAY,
+            "LMX_PROVIDER_UNAVAILABLE",
+            "Provider unavailable",
+        ),
+    };
+    error(status, code, message)
+}

@@ -1,0 +1,8 @@
+[package]
+name = "localmux-telemetry"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+regex = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
