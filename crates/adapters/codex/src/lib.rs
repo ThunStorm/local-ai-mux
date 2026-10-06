@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use localmux_adapter_sdk::{
-    Adapter, AdapterError, NormalizedRequest, NormalizedResponse, NormalizedStream, SessionStream,
+    collect_events, text_stream, Adapter, AdapterError, EventStream, FinishReason,
+    NormalizedRequest, NormalizedResponse, NormalizedStream, ResponseMetadata, SessionEventStream,
+    SessionStream, StreamEvent, TokenUsage,
 };
 use localmux_domain::{AdapterKind, CostMode, HealthStatus, ModelDescriptor};
 use localmux_quota::{QuotaBucket, QuotaSnapshot, QuotaSource};
@@ -45,7 +47,7 @@ impl CodexAdapter {
         parse_version(&String::from_utf8_lossy(&output.stdout)).ok_or(AdapterError::Unsupported)
     }
     pub async fn connect(&self) -> Result<Vec<ModelDescriptor>, AdapterError> {
-        self.version().await?;
+        let version = self.version().await?;
         let mut process = AppServer::start(&self.executable).await?;
         let (account, _) = process
             .request("account/read", json!({"refreshToken":false}))
@@ -53,14 +55,15 @@ impl CodexAdapter {
         if account["account"].is_null() && account["requiresOpenaiAuth"] == true {
             return Err(AdapterError::AuthRequired);
         }
-        process.models().await
+        process.models(&version).await
     }
     async fn prepare_turn(
         &self,
         request: NormalizedRequest,
         session: Option<&str>,
-    ) -> Result<(AppServer, String, String, Vec<Value>), AdapterError> {
-        request.single_user_prompt()?;
+    ) -> Result<(AppServer, String, String, Vec<Value>, Option<String>), AdapterError> {
+        let instructions = request.text_instructions(true)?;
+        let version = self.version().await?;
         let model = request
             .model
             .strip_prefix("codex/")
@@ -69,70 +72,119 @@ impl CodexAdapter {
             return Err(AdapterError::ModelUnavailable);
         }
         let mut process = AppServer::start(&self.executable).await?;
+        let chat = process
+            .models(&version)
+            .await?
+            .into_iter()
+            .find(|m| m.id == request.model)
+            .ok_or(AdapterError::ModelUnavailable)?
+            .chat;
+        request.parameters.validate(&chat)?;
+        if (instructions.system.is_some() || instructions.developer.is_some())
+            && chat.system != localmux_domain::Support::Supported
+        {
+            return Err(AdapterError::UnsupportedMessages);
+        }
         let cwd = process.cwd().to_string_lossy().into_owned();
+        // Only public config layers are inspected; retain server names, never values or credentials.
+        let (configuration, _) = process
+            .request("config/read", json!({"includeLayers":true}))
+            .await?;
+        let mut disabled_mcp = serde_json::Map::new();
+        if let Some(layers) = configuration["layers"].as_array() {
+            for layer in layers {
+                if let Some(servers) = layer["config"]["mcp_servers"].as_object() {
+                    for name in servers.keys() {
+                        disabled_mcp.insert(name.clone(), json!({"enabled":false}));
+                    }
+                }
+            }
+        }
+        let config = json!({"mcp_servers":disabled_mcp,"web_search":"disabled","project_doc_max_bytes":0,
+            "features":{"shell_tool":false,"unified_exec":false,"apps":false,"plugins":false,"multi_agent":false,"browser_use":false,"computer_use":false,"code_mode":false}});
         let method = if session.is_some() {
             "thread/resume"
         } else {
             "thread/start"
         };
-        let params = match session {
-            Some(id) => json!({"threadId":id,"approvalPolicy":"never","sandbox":"readOnly"}),
+        let mut params = match session {
+            Some(id) => json!({"threadId":id,"approvalPolicy":"never","sandbox":"read-only"}),
             None => {
-                json!({"model":model,"cwd":cwd,"approvalPolicy":"never","sandbox":"readOnly","serviceName":"localmux"})
+                json!({"model":model,"cwd":cwd,"approvalPolicy":"never","sandbox":"read-only","serviceName":"localmux"})
             }
         };
+        params["config"] = config;
+        // Explicit client instructions replace the corresponding default instruction layers.
+        params["baseInstructions"] = json!(instructions.system.unwrap_or_default());
+        params["developerInstructions"] = json!(instructions.developer.unwrap_or_default());
         let (thread, _) = process.request(method, params).await?;
+        let actual_model = thread["model"].as_str().map(str::to_owned);
         let id = thread["thread"]["id"]
             .as_str()
             .ok_or(AdapterError::ProcessFailed)?
             .to_owned();
-        let (turn, pending) = process.request("turn/start", json!({"threadId":id,"input":[{"type":"text","text":request.prompt}],"model":model,"cwd":cwd,"approvalPolicy":"never","sandboxPolicy":{"type":"readOnly"}})).await?;
+        let mut turn_params = json!({"threadId":id,"input":[{"type":"text","text":request.prompt}],"model":model,"cwd":cwd,"approvalPolicy":"never","sandboxPolicy":{"type":"readOnly"}});
+        if let Some(effort) = request.parameters.reasoning_effort {
+            turn_params["effort"] = json!(effort);
+        }
+        let (turn, pending) = process.request("turn/start", turn_params).await?;
         let turn_id = turn["turn"]["id"]
             .as_str()
             .ok_or(AdapterError::ProcessFailed)?
             .to_owned();
-        Ok((process, id, turn_id, pending))
+        Ok((process, id, turn_id, pending, actual_model))
     }
     pub async fn invoke_with_session(
         &self,
         request: NormalizedRequest,
         session: Option<&str>,
     ) -> Result<NormalizedResponse, AdapterError> {
-        let (mut process, id, turn_id, pending) = self.prepare_turn(request, session).await?;
-        process
-            .collect_turn(&id, &turn_id, pending)
-            .await
-            .map(|text| NormalizedResponse {
-                text,
-                provider_session_id: Some(id),
-            })
+        let (events, id) = self.stream_with_session(request, session).await?;
+        let mut response = collect_events(events).await?;
+        response.provider_session_id = Some(id);
+        Ok(response)
     }
     async fn stream_with_session(
         &self,
         request: NormalizedRequest,
         session: Option<&str>,
-    ) -> Result<(NormalizedStream, String), AdapterError> {
-        let (mut process, id, turn_id, pending) = self.prepare_turn(request, session).await?;
+    ) -> Result<(EventStream, String), AdapterError> {
+        let normalization =
+            (request.messages.len() > 1).then(|| "leading_instructions_v1".to_owned());
+        let (mut process, id, turn_id, pending, actual_model) =
+            self.prepare_turn(request, session).await?;
         let session_id = id.clone();
         Ok((
             Box::pin(async_stream::try_stream! {
                 let mut pending = pending.into_iter();
                 let mut saw_delta = false;
                 let mut final_text = String::new();
+                let mut metadata = ResponseMetadata { actual_model, normalization, ..Default::default() };
                 loop {
                     let event = match pending.next() { Some(event) => event, None => process.read(Duration::from_secs(120)).await? };
                     if event["params"]["threadId"].as_str().is_some_and(|value| value != id) { continue; }
                     if event["params"]["turnId"].as_str().is_some_and(|value| value != turn_id) { continue; }
                     match event["method"].as_str() {
+                        Some("error") => Err(map_turn_error(&event["params"]["error"]))?,
                         Some("item/agentMessage/delta") => if let Some(delta) = event["params"]["delta"].as_str() {
-                            saw_delta = true; yield delta.to_owned();
+                            saw_delta = true; yield StreamEvent::Delta(delta.to_owned());
                         },
                         Some("item/completed") if event["params"]["item"]["type"] == "agentMessage" => {
                             if let Some(text) = event["params"]["item"]["text"].as_str() { final_text = text.to_owned(); }
                         },
+                        Some("thread/tokenUsage/updated") => {
+                            if let Some(usage) = codex_usage(&event["params"]["tokenUsage"]["last"]) {
+                                metadata.usage = Some(usage.clone()); yield StreamEvent::Usage(usage);
+                            }
+                        },
+                        Some("model/rerouted") => { metadata.actual_model = event["params"]["toModel"].as_str().map(str::to_owned); },
+                        Some("item/started") if event["params"]["item"]["type"].as_str().is_some_and(|kind| !matches!(kind, "agentMessage" | "userMessage" | "reasoning")) => Err(AdapterError::Unsupported)?,
                         Some("turn/completed") => {
-                            if event["params"]["turn"]["status"] != "completed" { Err(AdapterError::ProcessFailed)?; }
-                            if !saw_delta && !final_text.is_empty() { yield final_text; }
+                            if event["params"]["turn"]["status"] == "interrupted" { metadata.finish_reason = FinishReason::Cancelled; yield StreamEvent::Completed(metadata); break; }
+                            if event["params"]["turn"]["status"] != "completed" { Err(map_turn_error(&event["params"]["turn"]["error"]))?; }
+                            if !saw_delta && !final_text.is_empty() { yield StreamEvent::Delta(final_text); }
+                            metadata.finish_reason = FinishReason::from_public(event["params"]["turn"]["finishReason"].as_str());
+                            yield StreamEvent::Completed(metadata);
                             break;
                         },
                         _ => {},
@@ -192,7 +244,7 @@ impl Adapter for CodexAdapter {
     ) -> Result<NormalizedStream, AdapterError> {
         self.stream_with_session(request, None)
             .await
-            .map(|(stream, _)| stream)
+            .map(|(stream, _)| text_stream(stream))
     }
     async fn resume(
         &self,
@@ -209,7 +261,23 @@ impl Adapter for CodexAdapter {
     ) -> Result<NormalizedStream, AdapterError> {
         self.stream_with_session(request, Some(provider_session_id))
             .await
+            .map(|(stream, _)| text_stream(stream))
+    }
+    async fn invoke_events(&self, request: NormalizedRequest) -> Result<EventStream, AdapterError> {
+        self.stream_with_session(request, None)
+            .await
             .map(|(stream, _)| stream)
+    }
+    async fn invoke_session_events(
+        &self,
+        request: NormalizedRequest,
+        session: Option<&str>,
+    ) -> Result<SessionEventStream, AdapterError> {
+        let (stream, id) = self.stream_with_session(request, session).await?;
+        Ok(SessionEventStream {
+            stream,
+            provider_session_id: Arc::new(Mutex::new(Some(id))),
+        })
     }
     async fn invoke_session_stream(
         &self,
@@ -218,7 +286,7 @@ impl Adapter for CodexAdapter {
     ) -> Result<SessionStream, AdapterError> {
         let (stream, id) = self.stream_with_session(request, session).await?;
         Ok(SessionStream {
-            stream,
+            stream: text_stream(stream),
             provider_session_id: Arc::new(Mutex::new(Some(id))),
         })
     }
@@ -237,7 +305,9 @@ impl AppServer {
             return Err(AdapterError::ProviderUnavailable);
         }
         let dir = tempfile::tempdir().map_err(|_| AdapterError::ProcessFailed)?;
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        configure_system_proxy(&mut command).await;
+        let mut child = command
             .arg("app-server")
             .current_dir(dir.path())
             .stdin(Stdio::piped())
@@ -326,62 +396,44 @@ impl AppServer {
             }
         }
     }
-    async fn models(&mut self) -> Result<Vec<ModelDescriptor>, AdapterError> {
+    async fn models(&mut self, version: &str) -> Result<Vec<ModelDescriptor>, AdapterError> {
         let (result, _) = self
             .request("model/list", json!({"limit":100,"includeHidden":false}))
             .await?;
-        parse_models(&result)
-    }
-    async fn collect_turn(
-        &mut self,
-        thread_id: &str,
-        turn_id: &str,
-        pending: Vec<Value>,
-    ) -> Result<String, AdapterError> {
-        let mut pending = pending.into_iter();
-        let mut final_text = String::new();
-        let mut deltas = String::new();
-        loop {
-            let event = match pending.next() {
-                Some(event) => event,
-                None => self.read(Duration::from_secs(120)).await?,
+        let mut models = parse_models(&result)?;
+        for model in &mut models {
+            model.chat.source = "公开 App Server 型号元数据与离线映射；本轮真实效果未验证".into();
+            model.chat.system = if version == "0.160.0" {
+                localmux_domain::Support::Supported
+            } else {
+                localmux_domain::Support::Unknown
             };
-            if event["params"]["threadId"]
-                .as_str()
-                .is_some_and(|id| id != thread_id)
-            {
-                continue;
+            model.chat.developer = model.chat.system;
+            if version != "0.160.0" {
+                model.chat.reasoning_efforts.clear();
             }
-            if event["params"]["turnId"]
-                .as_str()
-                .is_some_and(|id| id != turn_id)
-            {
-                continue;
+            model.chat.describe(Some(version.into()), "app_server_v2");
+            model
+                .chat
+                .public_candidate("json_schema", "guarantee_unverified");
+            if let Some(detail) = model.chat.details.get_mut("image_input") {
+                detail.native_support = if model
+                    .chat
+                    .native_input_modalities
+                    .iter()
+                    .any(|v| v == "image")
+                {
+                    localmux_domain::Support::Supported
+                } else {
+                    localmux_domain::Support::Unknown
+                };
+                detail.public_interface_support = detail.native_support;
             }
-            match event["method"].as_str() {
-                Some("item/agentMessage/delta") => {
-                    if let Some(delta) = event["params"]["delta"].as_str() {
-                        deltas.push_str(delta);
-                    }
-                }
-                Some("item/completed") if event["params"]["item"]["type"] == "agentMessage" => {
-                    if let Some(text) = event["params"]["item"]["text"].as_str() {
-                        final_text = text.to_owned();
-                    }
-                }
-                Some("turn/completed") => {
-                    if event["params"]["turn"]["status"] != "completed" {
-                        return Err(AdapterError::ProcessFailed);
-                    }
-                    return Ok(if final_text.is_empty() {
-                        deltas
-                    } else {
-                        final_text
-                    });
-                }
-                _ => {}
+            if let Some(detail) = model.chat.details.get_mut("reasoning_effort") {
+                detail.native_support = detail.effective_support;
             }
         }
+        Ok(models)
     }
 }
 impl Drop for AppServer {
@@ -390,6 +442,148 @@ impl Drop for AppServer {
     }
 }
 
+// GUI launches do not inherit shell proxy variables. Use only the user's existing
+// fixed macOS HTTP(S) proxy, scoped to this child; explicit environment wins.
+async fn configure_system_proxy(_command: &mut Command) {
+    #[cfg(target_os = "macos")]
+    {
+        if [
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        ]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+        {
+            return;
+        }
+        let Ok(Ok(output)) = timeout(
+            Duration::from_secs(2),
+            Command::new("/usr/sbin/scutil")
+                .arg("--proxy")
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        else {
+            return;
+        };
+        if !output.status.success() {
+            return;
+        }
+        let snapshot = String::from_utf8_lossy(&output.stdout);
+        for (kind, env_name) in [("HTTPS", "HTTPS_PROXY"), ("HTTP", "HTTP_PROXY")] {
+            if let Some(proxy) = system_http_proxy(&snapshot, kind) {
+                _command.env(env_name, proxy);
+            }
+        }
+        let no_proxy = std::env::var("NO_PROXY")
+            .or_else(|_| std::env::var("no_proxy"))
+            .unwrap_or_default();
+        let bypass = format!("{no_proxy},localhost,127.0.0.1,::1");
+        _command.env("NO_PROXY", &bypass).env("no_proxy", bypass);
+    }
+}
+#[cfg(any(target_os = "macos", test))]
+fn system_http_proxy(snapshot: &str, kind: &str) -> Option<String> {
+    let field = |name: &str| {
+        snapshot.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == name).then(|| value.trim())
+        })
+    };
+    if field(&format!("{kind}Enable"))? != "1" {
+        return None;
+    }
+    let host = field(&format!("{kind}Proxy"))?;
+    let port: u16 = field(&format!("{kind}Port"))?.parse().ok()?;
+    if host.is_empty()
+        || port == 0
+        || !host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']'))
+    {
+        return None;
+    }
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    Some(format!("http://{host}:{port}"))
+}
+fn map_turn_error(error: &Value) -> AdapterError {
+    let info = &error["codexErrorInfo"];
+    match info.as_str() {
+        Some("unauthorized") => return AdapterError::AuthRequired,
+        Some("contextWindowExceeded") => return AdapterError::ContextLimit,
+        Some("badRequest") => {
+            return localmux_adapter_sdk::parameter_error(
+                "request",
+                "upstream_validation",
+                "public_interface",
+            )
+        }
+        Some("cyberPolicy" | "misalignmentPolicyViolation") => return AdapterError::Refusal,
+        Some("usageLimitExceeded" | "sessionBudgetExceeded") => {
+            return AdapterError::QuotaExhausted
+        }
+        Some("rateLimitExceeded") => return AdapterError::RateLimited,
+        Some("serverOverloaded" | "flexUnavailable") => return AdapterError::ProviderUnavailable,
+        _ => {}
+    }
+    for kind in [
+        "httpConnectionFailed",
+        "responseStreamConnectionFailed",
+        "responseStreamDisconnected",
+        "responseTooManyFailedAttempts",
+    ] {
+        if let Some(detail) = info.get(kind) {
+            return match detail["httpStatusCode"].as_u64() {
+                Some(401 | 403) => AdapterError::AuthRequired,
+                Some(429) => AdapterError::RateLimited,
+                _ => AdapterError::ProviderUnavailable,
+            };
+        }
+    }
+    map_rpc_error(error)
+}
+
+fn codex_capabilities(item: &Value) -> localmux_domain::ChatCapabilities {
+    let mut chat = localmux_domain::ChatCapabilities::single_turn();
+    chat.native_input_modalities = item["inputModalities"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    chat.reasoning_efforts = item["supportedReasoningEfforts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e["reasoningEffort"].as_str())
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect();
+    chat.default_reasoning_effort = item["defaultReasoningEffort"].as_str().map(str::to_owned);
+    chat
+}
+fn codex_usage(last: &Value) -> Option<TokenUsage> {
+    // `last` is the turn snapshot; `total` is cumulative session usage and is never added.
+    Some(TokenUsage {
+        input_tokens: Some(last["inputTokens"].as_u64()?),
+        output_tokens: Some(last["outputTokens"].as_u64()?),
+        total_tokens: Some(last["totalTokens"].as_u64()?),
+        reasoning_tokens: last["reasoningOutputTokens"].as_u64(),
+        cached_input_tokens: last["cachedInputTokens"].as_u64(),
+        source: "provider_reported".into(),
+        scope: "last_turn".into(),
+    })
+}
 fn parse_models(value: &Value) -> Result<Vec<ModelDescriptor>, AdapterError> {
     let data = value["data"]
         .as_array()
@@ -408,6 +602,7 @@ fn parse_models(value: &Value) -> Result<Vec<ModelDescriptor>, AdapterError> {
                 cost_mode: CostMode::Unknown,
                 supports_streaming: true,
                 supports_session: true,
+                chat: codex_capabilities(item),
             })
         })
         .collect())
@@ -438,6 +633,12 @@ fn map_rpc_error(error: &Value) -> AdapterError {
         AdapterError::RateLimited
     } else if message.contains("quota") {
         AdapterError::QuotaExhausted
+    } else if matches!(error["code"].as_i64(), Some(-32600 | -32602)) {
+        localmux_adapter_sdk::parameter_error(
+            "request",
+            "protocol_invalid_request",
+            "public_interface",
+        )
     } else if message.contains("model") {
         AdapterError::ModelUnavailable
     } else {
@@ -488,6 +689,52 @@ fn parse_quotas(result: &Value, observed_at: i64) -> Vec<QuotaBucket> {
 mod tests {
     use super::*;
     #[test]
+    fn fixed_system_proxy_is_validated_and_disabled_proxy_is_ignored() {
+        let snapshot = "HTTPSEnable : 1\nHTTPSProxy : 127.0.0.1\nHTTPSPort : 10808";
+        assert_eq!(
+            system_http_proxy(snapshot, "HTTPS").as_deref(),
+            Some("http://127.0.0.1:10808")
+        );
+        assert!(
+            system_http_proxy(&snapshot.replace("Enable : 1", "Enable : 0"), "HTTPS").is_none()
+        );
+        assert!(system_http_proxy(&snapshot.replace("10808", "0"), "HTTPS").is_none());
+        assert!(
+            system_http_proxy(&snapshot.replace("127.0.0.1", "user:secret@host"), "HTTPS")
+                .is_none()
+        );
+        assert_eq!(
+            system_http_proxy(&snapshot.replace("127.0.0.1", "::1"), "HTTPS").as_deref(),
+            Some("http://[::1]:10808")
+        );
+    }
+    #[test]
+    fn structured_turn_errors_preserve_auth_quota_and_network_categories() {
+        for (info, expected) in [
+            (json!("unauthorized"), "auth"),
+            (json!("usageLimitExceeded"), "quota"),
+            (json!("rateLimitExceeded"), "rate"),
+            (
+                json!({"responseStreamDisconnected":{"httpStatusCode":null}}),
+                "network",
+            ),
+            (
+                json!({"httpConnectionFailed":{"httpStatusCode":401}}),
+                "auth",
+            ),
+        ] {
+            let result =
+                map_turn_error(&json!({"message":"private detail", "codexErrorInfo":info}));
+            assert!(matches!(
+                (expected, result),
+                ("auth", AdapterError::AuthRequired)
+                    | ("quota", AdapterError::QuotaExhausted)
+                    | ("rate", AdapterError::RateLimited)
+                    | ("network", AdapterError::ProviderUnavailable)
+            ));
+        }
+    }
+    #[test]
     fn catalog_is_dynamic_and_never_assumes_free() {
         let models = parse_models(
             &serde_json::from_str(include_str!("../tests/fixtures/model_list.json")).unwrap(),
@@ -510,6 +757,10 @@ mod tests {
                 &serde_json::from_str(include_str!("../tests/fixtures/rate_limit.json")).unwrap()
             ),
             AdapterError::RateLimited
+        ));
+        assert!(matches!(
+            map_rpc_error(&json!({"code":-32602,"message":"invalid synthetic model argument"})),
+            AdapterError::InvalidParameter { .. }
         ));
         assert_eq!(
             parse_version(include_str!("../tests/fixtures/version.txt")).as_deref(),

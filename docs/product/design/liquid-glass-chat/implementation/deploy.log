@@ -1,0 +1,52 @@
+$ pnpm --filter @localmux/desktop tauri build
+$ tauri build
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `pnpm build`
+$ tsc && vite build
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 27 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.46 kB │ gzip:  0.29 kB
+dist/assets/index-CjECfSOJ.css   23.62 kB │ gzip:  5.36 kB
+dist/assets/index-Doo5CwzF.js   291.18 kB │ gzip: 91.65 kB
+
+✓ built in 92ms
+   Compiling objc2-app-kit v0.3.2
+   Compiling localmux-domain v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/domain)
+   Compiling localmux-api-types v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/api-types)
+   Compiling localmux-adapter-sdk v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapter-sdk)
+   Compiling localmux-security v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/security)
+   Compiling localmux-router v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/router)
+   Compiling localmux-storage v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/storage)
+   Compiling localmux-adapter-codex v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/codex)
+   Compiling localmux-adapter-qoder v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/qoder)
+   Compiling localmux-adapter-codebuddy v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/codebuddy)
+   Compiling localmux-gateway v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/gateway)
+   Compiling objc2-web-kit v0.3.2
+   Compiling muda v0.19.3
+   Compiling tao v0.35.3
+   Compiling window-vibrancy v0.6.0
+   Compiling objc2-osa-kit v0.3.2
+   Compiling tauri-runtime v2.11.3
+   Compiling wry v0.55.1
+   Compiling osakit v0.3.1
+   Compiling arboard v3.6.1
+   Compiling tray-icon v0.24.2
+   Compiling tauri-runtime-wry v2.11.4
+   Compiling tauri v2.11.6
+   Compiling tauri-plugin-updater v2.12.0
+   Compiling tauri-plugin-clipboard-manager v2.3.3
+   Compiling tauri-plugin-autostart v2.5.1
+   Compiling localmux-desktop v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/apps/desktop/src-tauri)
+    Finished `release` profile [optimized] target(s) in 2m 49s
+       Built application at: /Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/localmux-desktop
+    Bundling LocalAiMux.app (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/macos/LocalAiMux.app)
+    Bundling LocalAiMux_0.1.0_aarch64.dmg (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/dmg/LocalAiMux_0.1.0_aarch64.dmg)
+     Running bundle_dmg.sh
+    Finished 2 bundles at:
+        /Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/macos/LocalAiMux.app
+        /Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/dmg/LocalAiMux_0.1.0_aarch64.dmg
+
+Installed and restarted: /Users/williamli/Applications/LocalAiMux.app (codex/dev c3665a3)

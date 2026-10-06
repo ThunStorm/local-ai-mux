@@ -2699,6 +2699,7 @@ dependencies = [
  "localmux-adapter-sdk",
  "localmux-domain",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -2785,10 +2786,13 @@ dependencies = [
 name = "localmux-desktop"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "futures-util",
  "localmux-adapter-codebuddy",
  "localmux-adapter-codex",
  "localmux-adapter-qoder",
  "localmux-adapter-sdk",
+ "localmux-api-types",
  "localmux-core",
  "localmux-discovery",
  "localmux-gateway",
@@ -2798,6 +2802,9 @@ dependencies = [
  "localmux-security",
  "localmux-storage",
  "localmux-telemetry",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "reqwest 0.12.28",
  "secrecy",
  "serde",
@@ -2807,6 +2814,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-updater",
+ "tempfile",
  "tokio",
  "tracing",
 ]

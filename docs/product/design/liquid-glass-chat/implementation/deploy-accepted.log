@@ -1,0 +1,26 @@
+$ pnpm --filter @localmux/desktop tauri build
+$ tauri build
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `pnpm build`
+$ tsc && vite build
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 27 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.46 kB │ gzip:  0.29 kB
+dist/assets/index-ZttleGkc.css   22.69 kB │ gzip:  5.21 kB
+dist/assets/index-BNydTSHd.js   291.39 kB │ gzip: 91.69 kB
+
+✓ built in 101ms
+   Compiling localmux-desktop v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/apps/desktop/src-tauri)
+    Finished `release` profile [optimized] target(s) in 2m 26s
+       Built application at: /Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/localmux-desktop
+    Bundling LocalAiMux.app (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/macos/LocalAiMux.app)
+    Bundling LocalAiMux_0.1.0_aarch64.dmg (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/dmg/LocalAiMux_0.1.0_aarch64.dmg)
+     Running bundle_dmg.sh
+    Finished 2 bundles at:
+        /Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/macos/LocalAiMux.app
+        /Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/target/release/bundle/dmg/LocalAiMux_0.1.0_aarch64.dmg
+
+Installed and restarted: /Users/williamli/Applications/LocalAiMux.app (codex/dev c3665a3)

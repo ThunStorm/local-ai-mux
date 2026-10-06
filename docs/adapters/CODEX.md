@@ -14,7 +14,7 @@ macOS 与 Windows 的可执行文件路径均可检测；本机仅在 macOS 上�
 
 ## Supported versions
 
-本机发现 `codex-cli 0.155.0-alpha.16.4`。尚无经过真实调用验收的 `max_verified_version`；界面应显示「版本未验证」，连接失败时明确报错，不能据此宣称正式支持。
+2026-10-06 本机为 `codex-cli 0.160.0`（早期 fixture 为 `0.155.0-alpha.16.4`）。本轮 0.160.0 的两个实际型号单轮流式结果见交接；这不建立完整版本兼容范围，界面保留「版本未验证」，连接失败明确报错。
 
 ## Connection/auth strategy
 
@@ -38,11 +38,11 @@ macOS 与 Windows 的可执行文件路径均可检测；本机仅在 macOS 上�
 
 ## Session handling
 
-新调用走 `thread/start`，续接走 `thread/resume`；返回原生 thread ID，Phase 7 将建立持久化 Conversation 映射。
+新调用走 `thread/start`，续接走 `thread/resume`；两者的 `sandbox` 是字符串 `read-only`。`turn/start.sandboxPolicy.type` 则是 `readOnly`，两个字段不能共用同一拼写。返回原生 thread ID，Phase 7 已建立持久化 Conversation 映射。
 
 ## Streaming format
 
-解析 `item/agentMessage/delta`、`item/completed` 和 `turn/completed`；增量文本进入 Gateway SSE，`[DONE]` 由 Gateway 结束。上游异常映射为统一错误。
+解析 `item/agentMessage/delta`、`item/completed` 和 `turn/completed`；增量文本进入 Gateway SSE，`[DONE]` 由 Gateway 结束。官方 `error` 通知与 failed turn 按 `codexErrorInfo` 映射认证、额度、限流或连接失败；首个错误即结束本次进程，厂商原文不透传，避免隐藏重试和空等超时。
 
 ## Process lifecycle
 
@@ -74,3 +74,19 @@ macOS 与 Windows 的可执行文件路径均可检测；本机仅在 macOS 上�
 2. 用户点击「添加」，检查官方登录状态及模型目录；未登录时不保存连接。
 3. 创建 LocalMux Key、启动 API，通过官方 OpenAI SDK 调用 `codex/<真实返回模型>` 的非流式和流式接口。
 4. 检查续接、取消、退出后进程清理，以及 SQLite/日志不含明文凭据。
+
+## 2026-10-06 故障修复验收
+
+用户报告 `codex/gpt-6-luna` 流式试对话约 0.2 秒失败。本机官方 App Server 握手、OAuth 门禁和 `model/list` 均正常，目录包含 `gpt-6-luna`；旧 `thread/start` 请求返回 `-32600`，指出 `readOnly` 不在 `read-only/workspace-write/danger-full-access` 枚举中。修正后，同一 CLI 的只读线程创建成功；未发送真实 `turn/start`，未消耗模型推理额度。离线 fixture 现强制检查 start/resume 的沙箱拼写，覆盖文本和 SSE。契约依据为本机 `codex app-server generate-json-schema` 与[官方 App Server 文档](https://learn.chatgpt.com/docs/app-server)。安装后的真实回答仍需用户在试对话中显式发送验收。
+
+## GUI 启动与系统代理
+
+2026-10-06 故障续查：线程与 turn 能在约 0.2 秒启动，但未带代理的实际短请求在 47 秒出现 `responseStreamDisconnected`；本机直连 ChatGPT 的无凭据检查超时，现有系统 HTTPS 代理可完成 TLS 并收到 HTTP 响应。macOS Adapter 在没有显式 HTTP(S)/ALL_PROXY 环境变量时，读取公开 `/usr/sbin/scutil --proxy` 的固定 HTTP/HTTPS 配置，仅向该 App Server 子进程注入代理；不修改系统/供应商配置，不读取代理凭据，保留已有 NO_PROXY 并补入 loopback。显式环境（包括空值）优先，PAC/自动代理和 SOCKS-only 不猜测；Windows 仍沿用已有环境。启用代理不等于真实模型成功，最终以安装版 Computer Use 验收记录为准。
+
+## 安装版真实单轮流式验收
+
+2026-10-06 按用户明确要求使用 Computer Use：在安装版 API 页恢复已授权只读 Agent 范围、刷新本机 Key、启动 API，试对话选择实际目录型号并发送同一短问题。`codex/gpt-6-luna` 完成 8.4 秒，`codex/gpt-6-sol` 完成 38.2 秒；Sol 的接收中、最终完成与两者默认参数/未携带历史由原生界面复核，结束后活动任务 0。CLI 0.160.0 的这两条真实流式链路通过；不以回答中的模型自述认证底层版本。其他型号、非流式/续接、远端取消/计费和 Windows 尚未因此验收。构建与数据库证据见 [交接](../HANDOFF.md)。
+
+## 2026-10-06 能力协商实施
+
+保留 model/list 的精确 inputModalities、defaultReasoningEffort、supportedReasoningEfforts；当前 0.160.0 的前置 system/developer 分别映射 baseInstructions/developerInstructions，effort 按枚举提交。公开 config/read 只提取 MCP 名称，请求级禁用外部执行/工具配置，隔离 cwd、never/read-only 保留；未发真实 turn 验证这些新控制。last usage 作为单 turn 快照，total 不累加；thread/model reroute 已报告型号才返回，completed 无结束原因时仍 unknown。Schema 和硬输出上限未开放；两种指令语义与安全控制的本轮验收仅为公开契约与 fixture。 完整边界和证据见[实施验收](../architecture/CAPABILITY_NEGOTIATION_IMPLEMENTATION_2026-10-06.md)。

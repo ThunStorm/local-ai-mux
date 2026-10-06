@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +66,212 @@ pub struct ModelDescriptor {
     pub cost_mode: CostMode,
     pub supports_streaming: bool,
     pub supports_session: bool,
+    #[serde(default)]
+    pub chat: ChatCapabilities,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Support {
+    Supported,
+    Unsupported,
+    #[default]
+    Unknown,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ParameterCapability {
+    pub support: Support,
+    pub min: f64,
+    pub max: Option<f64>,
+}
+impl ParameterCapability {
+    pub fn range(min: f64, max: f64) -> Self {
+        Self {
+            support: Support::Supported,
+            min,
+            max: Some(max),
+        }
+    }
+    pub fn accepts(&self, value: f64) -> bool {
+        self.support == Support::Supported
+            && value.is_finite()
+            && value >= self.min
+            && self.max.is_some_and(|max| value <= max)
+    }
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ChatCapabilities {
+    pub history: Support,
+    pub system: Support,
+    pub temperature: ParameterCapability,
+    pub top_p: ParameterCapability,
+    pub max_tokens: ParameterCapability,
+    pub source: String,
+    #[serde(default)]
+    pub developer: Support,
+    #[serde(default)]
+    pub max_completion_tokens: ParameterCapability,
+    #[serde(default)]
+    pub reasoning_efforts: Vec<String>,
+    #[serde(default)]
+    pub default_reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub native_input_modalities: Vec<String>,
+    #[serde(default)]
+    pub details: BTreeMap<String, CapabilityDetail>,
+}
+impl ChatCapabilities {
+    pub fn single_turn() -> Self {
+        Self {
+            history: Support::Unsupported,
+            system: Support::Unsupported,
+            source: "官方 CLI/App Server 单轮文本桥".into(),
+            temperature: ParameterCapability {
+                support: Support::Unsupported,
+                ..Default::default()
+            },
+            top_p: ParameterCapability {
+                support: Support::Unsupported,
+                ..Default::default()
+            },
+            max_tokens: ParameterCapability {
+                support: Support::Unsupported,
+                ..Default::default()
+            },
+            ..Self::default()
+        }
+    }
+    pub fn http_text() -> Self {
+        Self {
+            history: Support::Supported,
+            system: Support::Supported,
+            source: "HTTP 文字桥；参数能力尚未报告".into(),
+            ..Self::default()
+        }
+    }
+}
+/// Layered provenance is separate from the legacy effective capability fields.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CapabilityDetail {
+    pub effective_support: Support,
+    pub native_support: Support,
+    pub public_interface_support: Support,
+    pub adapter_state: String,
+    pub limiting_layer: Option<String>,
+    pub reason_code: Option<String>,
+    pub evidence: Vec<CapabilityEvidence>,
+    pub constraints: CapabilityConstraints,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CapabilityEvidence {
+    pub source_type: String,
+    pub protocol: String,
+    pub version: Option<String>,
+    pub observed_at: Option<i64>,
+    pub live_verified: bool,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CapabilityConstraints {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub values: Vec<String>,
+    pub counting_basis: Option<String>,
+    pub guarantee: Option<String>,
+}
+impl ChatCapabilities {
+    pub fn describe(&mut self, version: Option<String>, protocol: &str) {
+        let observed_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|value| value.as_secs() as i64);
+        for (name, effective) in [
+            ("text_input", Support::Supported),
+            ("image_input", Support::Unsupported),
+            ("non_stream", Support::Supported),
+            ("sse", Support::Supported),
+            ("system", self.system),
+            ("developer", self.developer),
+            ("history", self.history),
+            ("temperature", self.temperature.support),
+            ("top_p", self.top_p.support),
+            ("max_tokens", self.max_tokens.support),
+            ("max_completion_tokens", self.max_completion_tokens.support),
+            (
+                "reasoning_effort",
+                if self.reasoning_efforts.is_empty() {
+                    Support::Unknown
+                } else {
+                    Support::Supported
+                },
+            ),
+            ("context_window", Support::Unknown),
+            ("json_object", Support::Unsupported),
+            ("json_schema", Support::Unsupported),
+            ("usage", Support::Supported),
+            ("finish_reason", Support::Supported),
+            ("cancellation", Support::Unknown),
+            ("session_resume", Support::Unknown),
+        ] {
+            let public = if effective == Support::Supported {
+                Support::Supported
+            } else {
+                Support::Unknown
+            };
+            self.details.insert(
+                name.into(),
+                CapabilityDetail {
+                    effective_support: effective,
+                    public_interface_support: public,
+                    adapter_state: if effective == Support::Supported {
+                        "IMPLEMENTED"
+                    } else {
+                        "NOT_IMPLEMENTED"
+                    }
+                    .into(),
+                    limiting_layer: (effective != Support::Supported).then(|| "adapter".into()),
+                    reason_code: (effective != Support::Supported)
+                        .then(|| "not_implemented".into()),
+                    evidence: vec![CapabilityEvidence {
+                        source_type: "public_contract_and_fixture".into(),
+                        protocol: protocol.into(),
+                        version: version.clone(),
+                        observed_at,
+                        live_verified: false,
+                    }],
+                    ..Default::default()
+                },
+            );
+        }
+        for (name, parameter) in [
+            ("temperature", &self.temperature),
+            ("top_p", &self.top_p),
+            ("max_tokens", &self.max_tokens),
+            ("max_completion_tokens", &self.max_completion_tokens),
+        ] {
+            self.details.get_mut(name).unwrap().constraints = CapabilityConstraints {
+                min: (parameter.support == Support::Supported).then_some(parameter.min),
+                max: parameter.max,
+                ..Default::default()
+            };
+        }
+        self.details
+            .get_mut("reasoning_effort")
+            .unwrap()
+            .constraints
+            .values = self.reasoning_efforts.clone();
+        self.details
+            .get_mut("cancellation")
+            .unwrap()
+            .constraints
+            .guarantee = Some("local_receive_only; upstream_generation_and_billing_unknown".into());
+    }
+    pub fn public_candidate(&mut self, name: &str, reason: &str) {
+        if let Some(detail) = self.details.get_mut(name) {
+            detail.public_interface_support = Support::Supported;
+            detail.limiting_layer = Some("adapter".into());
+            detail.reason_code = Some(reason.into());
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Route {

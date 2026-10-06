@@ -10,7 +10,10 @@ use axum::{
     Json,
 };
 use futures_util::StreamExt;
-use localmux_adapter_sdk::{Adapter, AdapterError, NormalizedRequest};
+use localmux_adapter_sdk::{
+    Adapter, AdapterError, FinishReason, NormalizedRequest, NormalizedResponse, ResponseMetadata,
+    StreamEvent,
+};
 use localmux_api_types::{response_input_text, ResponsesRequest};
 use localmux_domain::{CostMode, HealthStatus};
 use localmux_router::{RouteCandidate, RouteError};
@@ -110,6 +113,9 @@ async fn context(
                 "Sticky model is unavailable",
             )));
         };
+        if let Some(response) = super::connection_cooldown(state, adapter.id()) {
+            return Err(Box::new(response));
+        }
         if let Err(reason) = localmux_router::select(
             if virtual_route {
                 requested
@@ -196,15 +202,16 @@ async fn context(
         reserve_available: false,
         health: adapter.health().await,
     }];
-    if !state.breaker.available(adapter.id(), Instant::now())
-        || matches!(
-            candidate[0].health,
-            HealthStatus::AuthRequired
-                | HealthStatus::Offline
-                | HealthStatus::Unsupported
-                | HealthStatus::QuotaExhausted
-        )
-    {
+    if let Some(response) = super::connection_cooldown(state, adapter.id()) {
+        return Err(Box::new(response));
+    }
+    if matches!(
+        candidate[0].health,
+        HealthStatus::AuthRequired
+            | HealthStatus::Offline
+            | HealthStatus::Unsupported
+            | HealthStatus::QuotaExhausted
+    ) {
         return Err(Box::new(error(
             StatusCode::BAD_GATEWAY,
             "LMX_PROVIDER_UNAVAILABLE",
@@ -224,14 +231,21 @@ fn response_object(
     message_id: &str,
     created: i64,
     model: &str,
-    text: &str,
+    response: &NormalizedResponse,
     previous: Option<&str>,
     metadata: &Value,
 ) -> Value {
-    json!({"id":id,"object":"response","created_at":created,"status":"completed","error":null,"incomplete_details":null,
+    let result = &response.metadata;
+    let text = &response.text;
+    let incomplete = matches!(
+        result.finish_reason,
+        FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter
+    );
+    let usage = result.usage.as_ref().map(|u| json!({"input_tokens":u.input_tokens,"output_tokens":u.output_tokens,"total_tokens":u.total_tokens}));
+    json!({"id":id,"object":"response","created_at":created,"status":if incomplete { "incomplete" } else { "completed" },"error":null,"incomplete_details":if incomplete { json!({"reason": match result.finish_reason { FinishReason::Length => "max_output_tokens", FinishReason::ContentFilter => "content_filter", _ => "cancelled" }}) } else { Value::Null },
         "model":model,"previous_response_id":previous,"metadata":metadata,
-        "output":[{"id":message_id,"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}],
-        "output_text":text,"usage":null})
+        "output":[{"id":message_id,"type":"message","status":if incomplete { "incomplete" } else { "completed" },"role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}],
+        "output_text":text,"usage":usage,"localmux":super::wire_metadata(result,id,model,None)})
 }
 fn event(name: &str, data: Value) -> Event {
     Event::default().event(name).data(data.to_string())
@@ -314,6 +328,7 @@ pub async fn create(
         model: context.model.clone(),
         prompt,
         messages: Vec::new(),
+        parameters: Default::default(),
     };
     let run = state.begin_run();
     if request.stream {
@@ -321,7 +336,7 @@ pub async fn create(
             Duration::from_secs(30),
             context
                 .adapter
-                .invoke_session_stream(normalized, context.provider_session_id.as_deref()),
+                .invoke_session_events(normalized, context.provider_session_id.as_deref()),
         )
         .await
         {
@@ -333,7 +348,10 @@ pub async fn create(
                     "Upstream resume unsupported",
                 )
             }
-            Ok(Err(kind)) => return adapter_error(kind),
+            Ok(Err(kind)) => {
+                super::breaker_error(&state, context.adapter.id(), &kind);
+                return adapter_error(kind);
+            }
             Err(_) => {
                 return error(
                     StatusCode::GATEWAY_TIMEOUT,
@@ -343,6 +361,7 @@ pub async fn create(
             }
         };
         let pool = state.pool.clone();
+        let stream_state = state.clone();
         let owner_key_id = key.id.clone();
         let previous = request.previous_response_id;
         let store = request.store.unwrap_or(true);
@@ -357,24 +376,40 @@ pub async fn create(
             sequence += 1;
             yield Ok(event("response.content_part.added", json!({"type":"response.content_part.added","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}})));
             sequence += 1;
-            let mut failed = false;
-            while let Some(next) = provider_stream.next().await {
+            let mut failure = None;
+            let mut result = ResponseMetadata::default();
+            let mut completed = false;
+            loop {
+                let next = match tokio::time::timeout(super::STREAM_IDLE_TIMEOUT, provider_stream.next()).await {
+                    Ok(Some(next)) => next,
+                    Ok(None) => { if completed { stream_state.breaker.success(context.adapter.id()); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
+                    Err(_) => {
+                        stream_state.breaker.open(context.adapter.id(), Instant::now(), Duration::from_secs(30));
+                        failure = Some("LMX_PROCESS_TIMEOUT"); break;
+                    },
+                };
                 match next {
-                    Ok(delta) => {
-                        if text.len() + delta.len() > 8 * 1024 * 1024 { failed = true; break; }
+                    Ok(StreamEvent::Delta(delta)) if !completed => {
+                        if text.len() + delta.len() > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
                         text.push_str(&delta);
                         yield Ok(event("response.output_text.delta", json!({"type":"response.output_text.delta","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"delta":delta})));
                         sequence += 1;
                     },
-                    Err(_) => { failed = true; break; },
+                    Ok(StreamEvent::Usage(usage)) if !completed => { result.usage = Some(usage); },
+                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported.usage = reported.usage.or(result.usage.take()); result = reported; completed = true; },
+                    Ok(_) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
+                    Err(kind) => {
+                        super::breaker_error(&stream_state, context.adapter.id(), &kind);
+                        failure = Some(super::adapter_error_details(&kind).1); break;
+                    },
                 }
             }
-            if failed {
-                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":"LMX_PROVIDER_UNAVAILABLE","message":"Upstream stream failed"}}})));
+            if let Some(code) = failure {
+                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed"}}})));
                 return;
             }
             let native_id = session.provider_session_id.lock().await.clone().or(context.provider_session_id);
-            if store && localmux_storage::save_response_mapping(&pool, localmux_storage::NewResponseMapping { owner_key_id: &owner_key_id, conversation_id: &context.conversation_id, response_id: &response_id, model_id: &context.model, adapter_id: context.adapter.id(), provider_session_id: native_id.as_deref(), previous_response_id: previous.as_deref(), created_at: created }).await.is_err() {
+            if store && !matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) && localmux_storage::save_response_mapping(&pool, localmux_storage::NewResponseMapping { owner_key_id: &owner_key_id, conversation_id: &context.conversation_id, response_id: &response_id, model_id: &context.model, adapter_id: context.adapter.id(), provider_session_id: native_id.as_deref(), previous_response_id: previous.as_deref(), created_at: created }).await.is_err() {
                 yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":"LMX_INTERNAL_ERROR","message":"Session persistence failed"}}})));
                 return;
             }
@@ -382,11 +417,15 @@ pub async fn create(
             sequence += 1;
             yield Ok(event("response.content_part.done", json!({"type":"response.content_part.done","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":text,"annotations":[]}})));
             sequence += 1;
-            yield Ok(event("response.output_item.done", json!({"type":"response.output_item.done","sequence_number":sequence,"output_index":0,"item":{"id":message_id,"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}})));
+            yield Ok(event("response.output_item.done", json!({"type":"response.output_item.done","sequence_number":sequence,"output_index":0,"item":{"id":message_id,"type":"message","status":if matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) { "incomplete" } else { "completed" },"role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}})));
             sequence += 1;
-            yield Ok(event("response.completed", json!({"type":"response.completed","sequence_number":sequence,"response":response_object(&response_id, &message_id, created, &context.model, &text, previous.as_deref(), &metadata)})));
+            let object = response_object(&response_id, &message_id, created, &context.model, &NormalizedResponse { text, provider_session_id: None, metadata: result }, previous.as_deref(), &metadata);
+            let terminal = if object["status"] == "incomplete" { "response.incomplete" } else { "response.completed" };
+            yield Ok(event(terminal, json!({"type":terminal,"sequence_number":sequence,"response":object})));
         };
-        return Sse::new(events).into_response();
+        return Sse::new(events)
+            .keep_alive(axum::response::sse::KeepAlive::default())
+            .into_response();
     }
     let result = if let Some(native_id) = context.provider_session_id.as_deref() {
         context.adapter.resume(normalized, native_id).await
@@ -402,13 +441,20 @@ pub async fn create(
                 "Upstream resume unsupported",
             )
         }
-        Err(kind) => return adapter_error(kind),
+        Err(kind) => {
+            super::breaker_error(&state, context.adapter.id(), &kind);
+            return adapter_error(kind);
+        }
     };
     let native_id = result
         .provider_session_id
         .as_deref()
         .or(context.provider_session_id.as_deref());
     if request.store.unwrap_or(true)
+        && !matches!(
+            result.metadata.finish_reason,
+            FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter
+        )
         && localmux_storage::save_response_mapping(
             &state.pool,
             localmux_storage::NewResponseMapping {
@@ -436,7 +482,7 @@ pub async fn create(
         &message_id,
         created,
         &context.model,
-        &result.text,
+        &result,
         request.previous_response_id.as_deref(),
         &metadata,
     ))

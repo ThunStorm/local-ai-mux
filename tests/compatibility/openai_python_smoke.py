@@ -13,3 +13,19 @@ assert response.output_text == "python-responses"
 events = client.responses.create(model="mock/echo", input="python-responses-stream", stream=True)
 assert "".join(event.delta for event in events if event.type == "response.output_text.delta") == "python-responses-stream"
 print("Python SDK: models, chat, Responses, streams passed")
+
+response = client.chat.completions.create(model="mock/echo", messages=[{"role":"system","content":"generic rules"},{"role":"user","content":"generic question"}], response_format={"type":"text"})
+assert response.usage is None
+assert response.choices[0].finish_reason is None
+assert response.localmux["usage_status"] == "unknown"
+chunks = list(client.chat.completions.create(model="mock/echo",messages=[{"role":"user","content":"usage unknown"}],stream=True,stream_options={"include_usage":True}))
+assert chunks[-1].usage is None
+assert chunks[-1].localmux["usage_status"] == "unknown"
+from openai import BadRequestError
+try:
+    client.chat.completions.create(model="mock/echo",messages=[{"role":"user","content":"generic question"}],max_tokens=8,max_completion_tokens=8)
+    raise AssertionError("conflicting limits must fail")
+except BadRequestError as error:
+    assert error.body["param"] == "max_completion_tokens"
+    assert error.body["retryable"] is False
+print("Python SDK: capability negotiation, unknown metadata and usage stream passed")

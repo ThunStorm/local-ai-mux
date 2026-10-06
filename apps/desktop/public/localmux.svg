@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#DCE5F1"/></linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#367BFF"/><stop offset="1" stop-color="#184BCE"/></linearGradient>
+  </defs>
+  <rect x="56" y="56" width="912" height="912" rx="212" fill="url(#tile)" stroke="#C2CDDD" stroke-width="8"/>
+  <rect x="70" y="70" width="884" height="884" rx="198" fill="none" stroke="#FFFFFF" stroke-opacity=".85" stroke-width="5"/>
+  <g fill="none" stroke="#386BE9" stroke-width="54" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M174 300H264Q294 300 316 338L370 424"/><path d="M174 512H370"/><path d="M174 724H264Q294 724 316 686L370 600"/><path d="M710 512H850"/>
+  </g>
+  <rect x="348" y="314" width="380" height="396" rx="94" fill="url(#core)"/>
+  <rect x="361" y="327" width="354" height="370" rx="81" fill="none" stroke="#88B9FF" stroke-opacity=".65" stroke-width="4"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M402 626L470 402H520L588 626H532L519 577H471L458 626ZM484 527H506L495 482Z"/>
+  <rect x="611" y="408" width="47" height="218" rx="16" fill="#FFFFFF"/>
+</svg>

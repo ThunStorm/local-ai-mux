@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-05",
+  "installed_app": "/Users/williamli/Applications/LocalAiMux.app",
+  "source_root": "/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0",
+  "branch": "codex/dev",
+  "working_tree": "modified",
+  "binary_sha256": "0bdc432210f28eace097d38abd6469dbb4943e9cef3467fe1209c7b61d94713e",
+  "checks": {
+    "install_restart": "PASS",
+    "process_alive": "PASS",
+    "installed_icon_matches_generated_icns": "PASS",
+    "database_integrity": "ok",
+    "saved_connections": 2,
+    "native_window_sizes": [
+      "960x680",
+      "800x600",
+      "760x560"
+    ],
+    "three_app_rows_identifiable_at_minimum": "PASS",
+    "native_search_distinguishes_qoder_and_qoder_cn": "PASS",
+    "chat_empty_and_disabled_states": "PASS",
+    "inspector_does_not_cover_composer": "PASS",
+    "escape_returns_focus": "PASS",
+    "light_system_and_opaque_appearance": "PASS",
+    "gateway_start_stop": "PASS",
+    "health_active_tasks": 0,
+    "unauthenticated_models_status": 401,
+    "agent_key_not_automatically_authorized": "PASS"
+  },
+  "restored": {
+    "window_size": "960x680",
+    "appearance": "system",
+    "reduce_transparency": false,
+    "gateway": "stopped"
+  },
+  "not_verified": [
+    "real provider inference and parameter effects",
+    "real remote cancellation and billing",
+    "dynamic macOS system accessibility toggles",
+    "older macOS native fallback",
+    "Windows native install/run"
+  ]
+}

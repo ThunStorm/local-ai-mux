@@ -2,6 +2,14 @@
 
 已实现 `GET /v1/models` 和 `POST /v1/chat/completions`，支持 Mock `mock/echo` 文字输入、非流式和 SSE；请求需要 `Authorization: Bearer lmx_...`。聊天只接受 `system/user/assistant` 文字消息，工具与多模态尚未启用。官方 Python/TypeScript SDK 已通过 Mock 模型列表、非流式与流式消费测试。
 
-产品对齐阶段的 Chat 请求保留消息顺序与角色。HTTP Provider 将完整消息数组传给上游；Codex/Qoder/CodeBuddy 的现有单轮 CLI/App Server 桥只接受单条 user 文本，多角色或历史消息返回 HTTP 400 `LMX_UNSUPPORTED_MESSAGES`，不会静默丢弃。`temperature`、`max_tokens` 尚无统一透传契约，传入时返回 `LMX_UNSUPPORTED_PARAMETER`；未知 Chat 字段返回 400。Responses 当前只接受字符串或单条 user 文本输入，多条消息明确拒绝。此接口只承诺 OpenAI 兼容文本子集；Mock 的消息回显仅供离线测试，不代表真实上游验收。
+Chat 保留消息顺序与角色。HTTP Provider 发送完整合法文字消息；Codex/Qoder/Qoder CN/CodeBuddy 的最小无状态桥支持连续前置 system + 单条 user。连续同角色指令按原顺序以明确边界合并，返回 `localmux.normalization=leading_instructions_v1`；Codex 0.160.0 还以独立字段映射前置 developer，CLI 单 system 层拒绝 developer，不能降级成 user。非前置指令、未实现历史/工具/多模态、developer 后再放 system 都明确拒绝，不丢上下文。HTTP 的任意历史与 native session resume 是独立能力。
+
+可选 temperature（0–2）、top_p（0–1）、max_tokens/max_completion_tokens（正整数）必须符合所选精确型号的有效能力和范围；未给字段不发送，f64 保留小数值。两个输出上限同时给出返回参数冲突，计数口径未核对时不互相冒充等价别名。reasoning_effort 仅按该型号合法枚举传递；当前 Codex 0.160.0 的公开 model/list→turn/start.effort 已映射，low 不等于 off。response_format 接受 text/json_object/json_schema 的标准形状，但首批只启用 text；Schema 保证未验证时明确报 not_implemented，不用 Prompt 伪装原生 JSON。Qoder/CN 输出限额/思考精确约束及 CodeBuddy/Codex 硬输出上限继续不可用。未支持、未知约束、冲突、范围错误均为 400，error 带 param/reason_code/limiting_layer/retryable=false/request_id；没有厂商原始认证信息或错误正文。其他未知字段不透传。
+
+桌面及一般客户端共用 `GET /api/chat/models`：`{schema_version:2,data:[{id,provider,stream,chat,connection_id,adapter,identity_scope}]}`，保持 models:read、Agent/Key/连接过滤；不含虚拟路由或凭据。旧 chat 字段继续表示有效能力，details 分别报告 effective/native/public_interface/adapter_state、限制层、版本时间证据、约束和 live_verified。缺失数字/枚举不伪造；Codex 的原生 image 元数据不开放 Gateway 图片。连接身份目前仍是 adapter_compat，实例迁移独立实施。`/v1/models` 的 OpenAI 形状不变。
+
+Chat 非流式与 SSE 同享可信元数据：未知 usage=null、finish_reason=null，localmux 显式记录 unknown；上游报告的 input/output/reasoning/cache、口径、实际型号与 resolved_model/request_id 分别保留。Codex 只使用 last turn 快照，不重加 session total；Qoder/CodeBuddy 累积用量不当成本次用量。标准 `stream_options:{include_usage:true}` 在流结束时增加 choices=[] 的 usage 块，未开启时保持旧流形状。截断映射 length，拒绝/过滤映射 content_filter，不能固定写成 stop；接收关闭只保证本机停止接收。Responses 仍仅接受字符串或单条 user 文本输入及已有 native resume；未知字段现在也拒绝，元数据/截断与 Chat 同义。
+
+详细实现、测试及未验收边界见[能力协商实施](../architecture/CAPABILITY_NEGOTIATION_IMPLEMENTATION_2026-10-06.md)。
 
 Phase 6 增加动态虚拟模型 `free`、`cheap`、`balanced`、`best`。只有存在符合条件的目标时才在模型列表展示。`free` 耗尽时返回 429 `LMX_FREE_POOL_EXHAUSTED`；真实 Adapter 目前均为费用 UNKNOWN，因此不会被自动放入免费池。`/v1/responses` 在 Phase 7 实现。

@@ -1,19 +1,22 @@
 use localmux_adapter_sdk::Adapter;
+mod native_material;
+mod playground;
 use localmux_router::RoutePolicy;
-use localmux_secrets::{OsSecretStore, SecretStore};
+use localmux_secrets::{MemorySecretStore, SecretStore};
 use secrecy::SecretString;
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
+    process::Stdio,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
 };
-use tauri::Manager;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
+use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -22,24 +25,34 @@ use tokio::sync::Mutex;
 struct GatewayControl {
     state: localmux_gateway::GatewayState,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    mimocode: Mutex<Option<MimoCodeSession>>,
     default_key_lock: Mutex<()>,
     close_to_tray: AtomicBool,
+    playground: playground::Control,
+}
+
+struct MimoCodeSession {
+    executable: String,
+    _child: tokio::process::Child,
+    _dir: tempfile::TempDir,
+    token_id: String,
 }
 
 const MIMO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
 const MIMO_SECRET_REF: &str = "provider.mimo";
-const MIMO_CONNECTION_REF: &str = "os-credential:mimo";
+const MIMO_CONNECTION_REF: &str = "session-credential:mimo";
 const DEFAULT_KEY_SETTING: &str = "default_api_key_id";
+static SESSION_SECRETS: LazyLock<MemorySecretStore> = LazyLock::new(MemorySecretStore::default);
 
-fn default_key_store() -> OsSecretStore {
-    OsSecretStore::new("app.localmux.desktop")
+fn default_key_store() -> &'static MemorySecretStore {
+    &SESSION_SECRETS
 }
 fn default_key_ref(id: &str) -> String {
     format!("api.key.{id}")
 }
 
-fn mimo_store() -> OsSecretStore {
-    OsSecretStore::new("app.localmux.desktop")
+fn mimo_store() -> &'static MemorySecretStore {
+    &SESSION_SECRETS
 }
 
 fn mimo_adapter(key: String) -> Result<Arc<dyn Adapter>, String> {
@@ -50,6 +63,102 @@ fn mimo_adapter(key: String) -> Result<Arc<dyn Adapter>, String> {
     )
     .map(|adapter| Arc::new(adapter) as Arc<dyn Adapter>)
     .map_err(|error| error.to_string())
+}
+
+struct MimoToken {
+    id: String,
+    key: String,
+    base: String,
+}
+
+fn trusted_mimocode_base(base: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(base) else {
+        return false;
+    };
+    url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port().is_some()
+        && url.path() == "/v1"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+}
+
+async fn revoke_mimocode_token(executable: &str, dir: &Path, id: &str) -> Result<(), String> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new(executable)
+            .args(["llm-server", "revoke", id])
+            .current_dir(dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    )
+    .await
+    .map_err(|_| "MiMo Code 令牌撤销超时")?
+    .map_err(|_| "MiMo Code 令牌撤销失败")?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err("MiMo Code 令牌撤销失败".into())
+    }
+}
+
+async fn issue_mimocode_token(
+    executable: &str,
+    dir: &Path,
+    models: &[String],
+) -> Result<Option<MimoToken>, String> {
+    let mut command = tokio::process::Command::new(executable);
+    // ponytail: short-lived session token; reconnect after expiry if long-running use is needed.
+    command.args([
+        "llm-server",
+        "issue",
+        "--json",
+        "--label",
+        "LocalAiMux",
+        "--ttl",
+        "30m",
+        "--max-age",
+        "30m",
+    ]);
+    for model in models {
+        command.arg("--model").arg(model);
+    }
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        command.current_dir(dir).stderr(Stdio::null()).output(),
+    )
+    .await
+    .map_err(|_| "MiMo Code 令牌申请超时")?
+    .map_err(|_| "无法启动 MiMo Code")?;
+    if !output.status.success() {
+        return Err("MiMo Code 令牌申请失败，请在官方 CLI 检查登录状态".into());
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|_| "MiMo Code 令牌格式无效")?;
+    let id = value["id"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or("MiMo Code 令牌缺少 ID")?;
+    let key = value["api_key"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or("MiMo Code 令牌缺少 Key")?;
+    let Some(base) = value["base_url"].as_str() else {
+        revoke_mimocode_token(executable, dir, id).await?;
+        return Ok(None);
+    };
+    if !trusted_mimocode_base(base) {
+        revoke_mimocode_token(executable, dir, id).await?;
+        return Err("MiMo Code 未提供可信的本机 API 地址".into());
+    }
+    Ok(Some(MimoToken {
+        id: id.into(),
+        key: key.into(),
+        base: base.into(),
+    }))
 }
 
 struct AdapterRegistration {
@@ -70,8 +179,13 @@ const ADAPTERS: &[AdapterRegistration] = &[
         create: |path| Arc::new(localmux_adapter_qoder::QoderAdapter::new(path)),
     },
     AdapterRegistration {
+        id: "qoder-cn",
+        executable_names: &["qodercn", "qodercn.exe"],
+        create: |path| Arc::new(localmux_adapter_qoder::QoderAdapter::new_cn(path)),
+    },
+    AdapterRegistration {
         id: "codebuddy",
-        executable_names: &["codebuddy", "codebuddy.exe"],
+        executable_names: &["codebuddy", "codebuddy.exe", "cbc", "cbc.exe"],
         create: |path| Arc::new(localmux_adapter_codebuddy::CodeBuddyAdapter::new(path)),
     },
 ];
@@ -83,7 +197,21 @@ fn adapter_for(id: &str, path: PathBuf) -> Option<Arc<dyn Adapter>> {
         .map(|item| (item.create)(path))
 }
 
+fn incomplete_workbuddy_cli(id: &str, path: &str) -> bool {
+    let path = PathBuf::from(path);
+    id == "codebuddy"
+        && path
+            .to_string_lossy()
+            .contains(".app/Contents/Resources/app.asar.unpacked/cli/bin/")
+        && !path
+            .parent()
+            .is_some_and(|parent| parent.join("../dist/codebuddy.js").is_file())
+}
+
 fn connectable_cli_name(id: &str, path: &str) -> bool {
+    if incomplete_workbuddy_cli(id, path) {
+        return false;
+    }
     let path = PathBuf::from(path);
     let Some(name) = path
         .file_name()
@@ -92,10 +220,20 @@ fn connectable_cli_name(id: &str, path: &str) -> bool {
     else {
         return false;
     };
-    ADAPTERS
-        .iter()
-        .find(|item| item.id == id)
-        .is_some_and(|item| item.executable_names.contains(&name.as_str()))
+    (id == "mimo" && name == "mimo")
+        || ADAPTERS
+            .iter()
+            .find(|item| item.id == id)
+            .is_some_and(|item| item.executable_names.contains(&name.as_str()))
+}
+
+fn scanned_cli(id: &str, candidate: &str) -> bool {
+    localmux_discovery::scan().applications.iter().any(|app| {
+        app.app_id == id
+            && app.detection_source == "executable"
+            && app.executable.as_deref() == Some(candidate)
+            && connectable_cli_name(id, candidate)
+    })
 }
 
 #[tauri::command]
@@ -104,6 +242,22 @@ async fn scan_apps() -> Result<localmux_discovery::ScanReport, String> {
         .await
         .map_err(|error| error.to_string())?;
     for app in &mut report.applications {
+        if app.app_id == "codebuddy"
+            && app.detection_source == "executable"
+            && app
+                .executable
+                .as_deref()
+                .is_some_and(|path| incomplete_workbuddy_cli("codebuddy", path))
+        {
+            app.diagnostics.push(
+                "WorkBuddy 包内 CLI 缺少完整运行文件；需要官方独立 CodeBuddy Code CLI 才能验证模型"
+                    .into(),
+            );
+        }
+        if app.app_id == "mimo" && app.detection_source == "executable" {
+            app.diagnostics
+                .push("MiMo Code CLI 已安装；点击连接后才启动官方本机能力 API 并验证模型".into());
+        }
         if app.detection_source == "executable"
             && app
                 .executable
@@ -172,16 +326,9 @@ async fn connect_app(
 ) -> Result<Vec<String>, String> {
     let id = app_id.clone();
     let candidate = executable.clone();
-    let valid = tokio::task::spawn_blocking(move || {
-        localmux_discovery::scan().applications.iter().any(|app| {
-            app.app_id == id
-                && app.detection_source == "executable"
-                && app.executable.as_deref() == Some(candidate.as_str())
-                && connectable_cli_name(&id, &candidate)
-        })
-    })
-    .await
-    .map_err(|error| error.to_string())?;
+    let valid = tokio::task::spawn_blocking(move || scanned_cli(&id, &candidate))
+        .await
+        .map_err(|error| error.to_string())?;
     if !valid {
         return Err("请选择已扫描到的官方 CLI 可执行文件".into());
     }
@@ -197,6 +344,107 @@ async fn connect_app(
     control.state.seed_catalog(&app_id, models.clone()).await;
     control.state.refresh_quota_for(&app_id, true).await;
     Ok(models.into_iter().map(|model| model.id).collect())
+}
+
+#[tauri::command]
+async fn cli_auth_status(app_id: String, executable: String) -> Result<String, String> {
+    if app_id != "qoder" && app_id != "qoder-cn" && app_id != "codex" && app_id != "mimo" {
+        return Err("该运行时没有可确认的 CLI 登录状态".into());
+    }
+    let id = app_id.clone();
+    let candidate = executable.clone();
+    let valid = tokio::task::spawn_blocking(move || scanned_cli(&id, &candidate))
+        .await
+        .map_err(|error| error.to_string())?;
+    if !valid {
+        return Err("请选择已扫描到的官方 CLI".into());
+    }
+    let mut command = tokio::process::Command::new(&executable);
+    if app_id == "qoder" || app_id == "qoder-cn" {
+        command.args(["status", "--output", "json"]);
+    } else if app_id == "mimo" {
+        command.args(["providers", "whoami", "--pure"]);
+    } else {
+        command.args(["login", "status"]);
+    }
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output(),
+    )
+    .await
+    .map_err(|_| "官方 CLI 登录状态检查超时")?
+    .map_err(|_| "无法启动官方 CLI 登录状态检查")?;
+    if app_id == "qoder" || app_id == "qoder-cn" {
+        let value: serde_json::Value =
+            serde_json::from_slice(&output.stdout).map_err(|_| "Qoder 登录状态格式无效")?;
+        return Ok(match value["logged_in"].as_bool() {
+            Some(true) => "READY",
+            Some(false) => "AUTH_REQUIRED",
+            None => "ERROR",
+        }
+        .into());
+    }
+    let message = format!(
+        "{} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .to_ascii_lowercase();
+    if app_id == "mimo" {
+        return Ok(if message.contains("not logged") {
+            "AUTH_REQUIRED"
+        } else if output.status.success() && message.contains("logged") {
+            "READY"
+        } else {
+            "ERROR"
+        }
+        .into());
+    }
+    Ok(if output.status.success()
+        && message.contains("logged in")
+        && !message.contains("not logged in")
+    {
+        "READY"
+    } else if message.contains("not logged in") {
+        "AUTH_REQUIRED"
+    } else {
+        "ERROR"
+    }
+    .into())
+}
+
+#[tauri::command]
+async fn cli_login(app_id: String, executable: String) -> Result<(), String> {
+    if app_id != "qoder" && app_id != "qoder-cn" && app_id != "codex" && app_id != "mimo" {
+        return Err("该 CLI 没有可用的官方登录命令".into());
+    }
+    let candidate = executable.clone();
+    let id = app_id.clone();
+    let valid = tokio::task::spawn_blocking(move || scanned_cli(&id, &candidate))
+        .await
+        .map_err(|error| error.to_string())?;
+    if !valid {
+        return Err("请选择已扫描到的官方 CLI".into());
+    }
+    let mut command = tokio::process::Command::new(&executable);
+    if app_id == "mimo" {
+        command.args(["providers", "login", "-p", "xiaomi"]);
+    } else {
+        command.arg("login");
+    }
+    let mut child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|_| "无法启动官方 CLI 登录流程")?;
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -240,6 +488,105 @@ async fn connect_mimo(
 }
 
 #[tauri::command]
+async fn connect_mimocode(
+    control: tauri::State<'_, GatewayControl>,
+    executable: String,
+) -> Result<Vec<String>, String> {
+    let candidate = executable.clone();
+    let valid = tokio::task::spawn_blocking(move || scanned_cli("mimo", &candidate))
+        .await
+        .map_err(|error| error.to_string())?;
+    if !valid {
+        return Err("请选择已扫描到的 MiMo Code CLI".into());
+    }
+    let mut slot = control.mimocode.lock().await;
+    if slot.is_some() {
+        return Err("MiMo Code 已连接，请先断开".into());
+    }
+    let dir = tempfile::tempdir().map_err(|_| "无法创建 MiMo Code 临时目录")?;
+    let mut child = tokio::process::Command::new(&executable)
+        .args(["serve", "--pure", "--hostname", "127.0.0.1", "--port", "0"])
+        .current_dir(dir.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| "无法启动 MiMo Code 本机服务")?;
+    let mut broad = None;
+    for _ in 0..20 {
+        if child
+            .try_wait()
+            .map_err(|_| "MiMo Code 服务状态不可用")?
+            .is_some()
+        {
+            return Err("MiMo Code 本机服务启动失败".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        if let Some(token) = issue_mimocode_token(&executable, dir.path(), &[]).await? {
+            broad = Some(token);
+            break;
+        }
+    }
+    let broad = broad.ok_or("MiMo Code 本机服务未就绪")?;
+    let catalog = localmux_adapter_sdk::provider_http::HttpProvider::new(
+        "mimocode",
+        &broad.base,
+        SecretString::from(broad.key.clone()),
+    );
+    let listed = match catalog {
+        Ok(catalog) => catalog
+            .list_models()
+            .await
+            .map_err(|error| error.to_string()),
+        Err(error) => Err(error.to_string()),
+    };
+    revoke_mimocode_token(&executable, dir.path(), &broad.id).await?;
+    let allowed: Vec<String> = listed?
+        .into_iter()
+        .filter_map(|model| {
+            let id = model.id.strip_prefix("mimocode/")?;
+            (id.starts_with("mimo/") || id.starts_with("xiaomi/")).then(|| id.to_owned())
+        })
+        .collect();
+    if allowed.is_empty() {
+        return Err("MiMo Code 未报告可连接的 MiMo 模型，请在官方 CLI 检查登录".into());
+    }
+    let scoped = issue_mimocode_token(&executable, dir.path(), &allowed)
+        .await?
+        .ok_or("MiMo Code 本机服务未就绪")?;
+    let adapter = localmux_adapter_sdk::provider_http::HttpProvider::new(
+        "mimocode",
+        &scoped.base,
+        SecretString::from(scoped.key),
+    );
+    let adapter = match adapter {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            let _ = revoke_mimocode_token(&executable, dir.path(), &scoped.id).await;
+            return Err(error.to_string());
+        }
+    };
+    let models = adapter
+        .list_models()
+        .await
+        .map_err(|error| error.to_string());
+    if models.is_err() {
+        let _ = revoke_mimocode_token(&executable, dir.path(), &scoped.id).await;
+    }
+    let models = models?;
+    control.state.register(Arc::new(adapter)).await;
+    control.state.seed_catalog("mimocode", models.clone()).await;
+    *slot = Some(MimoCodeSession {
+        executable,
+        _child: child,
+        _dir: dir,
+        token_id: scoped.id,
+    });
+    Ok(models.into_iter().map(|model| model.id).collect())
+}
+
+#[tauri::command]
 async fn connected_apps(
     control: tauri::State<'_, GatewayControl>,
 ) -> Result<Vec<(String, String)>, String> {
@@ -251,6 +598,10 @@ async fn connected_apps(
     {
         connections.retain(|(id, _)| id != "mimo");
     }
+    connections.retain(|(id, path)| !incomplete_workbuddy_cli(id, path));
+    if let Some(session) = control.mimocode.lock().await.as_ref() {
+        connections.push(("mimocode".into(), session.executable.clone()));
+    }
     Ok(connections)
 }
 
@@ -259,6 +610,22 @@ async fn disconnect_app(
     control: tauri::State<'_, GatewayControl>,
     app_id: String,
 ) -> Result<(), String> {
+    if app_id == "mimocode" {
+        let session = control
+            .mimocode
+            .lock()
+            .await
+            .take()
+            .ok_or("MiMo Code 未连接")?;
+        control.state.unregister("mimocode").await;
+        if let Err(error) =
+            revoke_mimocode_token(&session.executable, session._dir.path(), &session.token_id).await
+        {
+            tracing::warn!(%error, "MiMo Code token will expire within 30 minutes");
+        }
+        drop(session);
+        return Ok(());
+    }
     if app_id != "mimo" && adapter_for(&app_id, PathBuf::new()).is_none() {
         return Err("未知 Adapter".into());
     }
@@ -493,10 +860,20 @@ async fn default_key_material(
 
 async fn ensure_default_api_key(control: &GatewayControl) -> Result<(), String> {
     let _guard = control.default_key_lock.lock().await;
-    if default_key_material(control).await?.is_none() {
-        create_stored_default_key(control, None, false).await?;
+    let old_id = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
+        .await
+        .map_err(|error| error.to_string())?;
+    if let Some(id) = &old_id {
+        if default_key_store()
+            .get(&default_key_ref(id))
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            default_key_material(control).await?;
+            return Ok(());
+        }
     }
-    Ok(())
+    create_stored_default_key(control, old_id.as_deref(), false).await
 }
 
 #[tauri::command]
@@ -509,6 +886,22 @@ async fn default_api_key_status(
         Err(_) => "MISSING",
     }
     .into())
+}
+
+#[tauri::command]
+async fn default_api_key_allows_agent(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<bool, String> {
+    let id = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
+        .await
+        .map_err(|error| error.to_string())?;
+    let keys = localmux_storage::list_api_keys(&control.state.pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(keys.iter().any(|key| {
+        Some(key.id.as_str()) == id.as_deref()
+            && key.scopes.iter().any(|scope| scope == "agent:invoke")
+    }))
 }
 
 #[tauri::command]
@@ -743,6 +1136,11 @@ pub fn run() {
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                 let control = window.state::<GatewayControl>();
+                if control.playground.busy() || control.state.active_tasks() > 0 {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); }
+                    let _ = window.emit("localmux-exit-blocked", ());
+                    return;
+                }
                 if control.close_to_tray.load(Ordering::Relaxed) {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
@@ -752,17 +1150,14 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") { native_material::install(&window); }
             if let Some(public_key) = option_env!("LOCALMUX_UPDATER_PUBLIC_KEY").filter(|value| !value.is_empty()) {
                 if option_env!("LOCALMUX_UPDATER_ENDPOINT").is_some_and(|value| value.starts_with("https://")) {
                     app.handle().plugin(tauri_plugin_updater::Builder::new().pubkey(public_key).build())?;
                 }
             }
-            let product_name = app
-                .config()
-                .product_name
-                .as_deref()
-                .ok_or_else(|| std::io::Error::other("product name unavailable"))?;
-            let data_dir = localmux_core::data_dir(product_name)
+            // Keep the existing data directory when the visible app name changes.
+            let data_dir = localmux_core::data_dir("LocalMux")
                 .ok_or_else(|| std::io::Error::other("application data directory unavailable"))?;
             let pool = tauri::async_runtime::block_on(localmux_storage::open(
                 &data_dir.join("localmux.db"),
@@ -784,6 +1179,7 @@ pub fn run() {
             for (id, path) in
                 tauri::async_runtime::block_on(localmux_storage::saved_connections(&pool))?
             {
+                if incomplete_workbuddy_cli(&id, &path) { continue; }
                 let adapter = if id == "mimo" && path == MIMO_CONNECTION_REF {
                     mimo_store()
                         .get(MIMO_SECRET_REF)
@@ -800,19 +1196,23 @@ pub fn run() {
             app.manage(GatewayControl {
                 state: state.clone(),
                 task: Mutex::new(None),
+                mimocode: Mutex::new(None),
                 default_key_lock: Mutex::new(()),
+                playground: playground::Control::default(),
                 close_to_tray: AtomicBool::new(tauri::async_runtime::block_on(localmux_storage::setting_bool(&pool, "close_to_tray"))?.unwrap_or(false)),
             });
+            tauri::async_runtime::block_on(ensure_default_api_key(&app.state::<GatewayControl>()))
+                .map_err(std::io::Error::other)?;
             let gateway_status = MenuItem::with_id(app, "gateway_status", "API：未启动", false, None::<&str>)?;
-            let open = MenuItem::with_id(app, "open", "打开智汇枢", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "打开 LocalAiMux", true, None::<&str>)?;
             let toggle = MenuItem::with_id(app, "toggle", "启动 API", true, None::<&str>)?;
             let copy_url = MenuItem::with_id(app, "copy_url", "复制 API 地址", true, None::<&str>)?;
             let tasks = MenuItem::with_id(app, "tasks", "运行任务：0", false, None::<&str>)?;
             let warnings = MenuItem::with_id(app, "warnings", "警告：0", false, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出智汇枢", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出 LocalAiMux", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&gateway_status, &open, &toggle, &copy_url, &tasks, &warnings, &quit])?;
             let icon = app.default_window_icon().ok_or_else(|| std::io::Error::other("tray icon unavailable"))?.clone();
-            TrayIconBuilder::new().icon(icon).tooltip("LocalMux · 智汇枢").menu(&menu)
+            TrayIconBuilder::new().icon(icon).tooltip("LocalAiMux").menu(&menu)
                 .on_menu_event(|handle, event| match event.id.0.as_str() {
                     "open" => { if let Some(window) = handle.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); } },
                     "toggle" => { let handle = handle.clone(); tauri::async_runtime::spawn(async move {
@@ -852,7 +1252,10 @@ pub fn run() {
             added_apps,
             remove_detected_app,
             connect_app,
+            cli_auth_status,
+            cli_login,
             connect_mimo,
+            connect_mimocode,
             connected_apps,
             disconnect_app,
             routing_get,
@@ -878,11 +1281,46 @@ pub fn run() {
             revoke_api_key,
             list_api_keys,
             default_api_key_status,
+            default_api_key_allows_agent,
             reveal_default_api_key,
             reset_default_api_key,
             api_setup_models,
+            playground::chat_models,
+            playground::chat_send,
+            playground::chat_cancel,
+            native_material::native_appearance,
+            native_material::native_theme,
             verify_model
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run LocalMux desktop application");
+        .build(tauri::generate_context!())
+        .expect("failed to build LocalAiMux desktop application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if let Some(control) = app.try_state::<GatewayControl>() {
+                    if control.playground.busy() || control.state.active_tasks() > 0 {
+                        api.prevent_exit();
+                        let _ = app.emit("localmux-exit-blocked", ());
+                        if let Some(window) = app.get_webview_window("main") { let _ = window.show(); }
+                    }
+                }
+            }
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trusted_mimocode_base;
+
+    #[test]
+    fn mimocode_token_never_goes_to_a_non_loopback_endpoint() {
+        assert!(trusted_mimocode_base("http://127.0.0.1:4567/v1"));
+        for base in [
+            "https://example.com/v1",
+            "http://localhost:4567/v1",
+            "http://127.0.0.1:4567/other",
+            "http://user@127.0.0.1:4567/v1",
+        ] {
+            assert!(!trusted_mimocode_base(base));
+        }
+    }
 }

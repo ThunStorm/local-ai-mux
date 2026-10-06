@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-05",
+  "kind": "original software icons + deterministic app icon refinement",
+  "binary_sha256": "a689748b914745ec9b7425ca7d6cac758ccb16babe39b1732db405440e3648b5",
+  "install_restart": "PASS",
+  "process_alive": "PASS",
+  "installed_icns_matches_export": "PASS",
+  "original_source_exports": 6,
+  "source_export_hash_and_repeatability": "PASS",
+  "frontend_tests": 6,
+  "ui_checks": 16,
+  "native_viewports": [
+    "960x680",
+    "760x560"
+  ],
+  "database_integrity": "ok",
+  "saved_connections": 2,
+  "real_provider_calls": "not triggered",
+  "other_external_gaps": "unchanged from implementation record"
+}

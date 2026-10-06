@@ -1,7 +1,7 @@
 pub mod cli;
 pub mod provider_http;
 use async_trait::async_trait;
-use futures_util::{stream, Stream};
+use futures_util::{stream, Stream, StreamExt};
 use localmux_domain::{AdapterKind, HealthStatus, ModelDescriptor};
 use localmux_quota::{QuotaBucket, QuotaSnapshot};
 use serde::Serialize;
@@ -14,6 +14,122 @@ pub struct NormalizedRequest {
     pub model: String,
     pub prompt: String,
     pub messages: Vec<NormalizedMessage>,
+    pub parameters: ChatParameters,
+}
+#[derive(Clone, Debug, Default, serde::Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatParameters {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
+}
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ResponseFormat {
+    Text,
+    JsonObject,
+    JsonSchema { json_schema: JsonSchemaFormat },
+}
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct JsonSchemaFormat {
+    pub name: String,
+    pub schema: serde_json::Value,
+    pub strict: Option<bool>,
+}
+impl ChatParameters {
+    pub fn validate(
+        &self,
+        capabilities: &localmux_domain::ChatCapabilities,
+    ) -> Result<(), AdapterError> {
+        if self.max_tokens.is_some() && self.max_completion_tokens.is_some() {
+            return Err(parameter_error(
+                "max_completion_tokens",
+                "conflict",
+                "gateway",
+            ));
+        }
+        for (name, value, capability) in [
+            ("temperature", self.temperature, &capabilities.temperature),
+            ("top_p", self.top_p, &capabilities.top_p),
+            (
+                "max_tokens",
+                self.max_tokens.map(f64::from),
+                &capabilities.max_tokens,
+            ),
+            (
+                "max_completion_tokens",
+                self.max_completion_tokens.map(f64::from),
+                &capabilities.max_completion_tokens,
+            ),
+        ] {
+            if let Some(value) = value {
+                if !capability.accepts(value) {
+                    let detail = capabilities.details.get(name);
+                    let reason = if capability.support == localmux_domain::Support::Supported {
+                        "out_of_range"
+                    } else {
+                        detail
+                            .and_then(|d| d.reason_code.as_deref())
+                            .unwrap_or("unknown_constraints")
+                    };
+                    return Err(parameter_error(
+                        name,
+                        reason,
+                        detail
+                            .and_then(|d| d.limiting_layer.as_deref())
+                            .unwrap_or("adapter"),
+                    ));
+                }
+            }
+        }
+        if let Some(effort) = &self.reasoning_effort {
+            if !capabilities.reasoning_efforts.contains(effort) {
+                return Err(parameter_error(
+                    "reasoning_effort",
+                    if capabilities.reasoning_efforts.is_empty() {
+                        "unknown_constraints"
+                    } else {
+                        "out_of_range"
+                    },
+                    "adapter",
+                ));
+            }
+        }
+        if self
+            .response_format
+            .as_ref()
+            .is_some_and(|format| !matches!(format, ResponseFormat::Text))
+        {
+            return Err(parameter_error(
+                "response_format",
+                "not_implemented",
+                "adapter",
+            ));
+        }
+        Ok(())
+    }
+}
+pub fn parameter_error(param: &str, reason: &str, layer: &str) -> AdapterError {
+    AdapterError::InvalidParameter {
+        param: param.into(),
+        reason: reason.into(),
+        layer: layer.into(),
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct TextInstructions {
+    pub system: Option<String>,
+    pub developer: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct NormalizedMessage {
@@ -22,6 +138,8 @@ pub struct NormalizedMessage {
 }
 impl NormalizedRequest {
     pub fn single_user_prompt(&self) -> Result<&str, AdapterError> {
+        self.parameters
+            .validate(&localmux_domain::ChatCapabilities::single_turn())?;
         if self.messages.is_empty()
             || (self.messages.len() == 1
                 && self.messages[0].role == "user"
@@ -31,6 +149,39 @@ impl NormalizedRequest {
         } else {
             Err(AdapterError::UnsupportedMessages)
         }
+    }
+    /// Only leading instructions plus one user are normalized. History is never flattened.
+    pub fn text_instructions(
+        &self,
+        developer_supported: bool,
+    ) -> Result<TextInstructions, AdapterError> {
+        let messages = self.chat_messages();
+        if messages
+            .last()
+            .is_none_or(|m| m.role != "user" || m.content != self.prompt)
+        {
+            return Err(AdapterError::UnsupportedMessages);
+        }
+        let mut result = TextInstructions::default();
+        let mut saw_developer = false;
+        for message in &messages[..messages.len() - 1] {
+            let target = match message.role.as_str() {
+                "system" if !saw_developer => &mut result.system,
+                "developer" if developer_supported => {
+                    saw_developer = true;
+                    &mut result.developer
+                }
+                _ => return Err(AdapterError::UnsupportedMessages),
+            };
+            if let Some(text) = target {
+                // A visible separator preserves same-role instruction order without inventing roles.
+                text.push_str("\n\n--- next instruction ---\n\n");
+                text.push_str(&message.content);
+            } else {
+                *target = Some(message.content.clone());
+            }
+        }
+        Ok(result)
     }
     pub fn chat_messages(&self) -> Vec<NormalizedMessage> {
         if self.messages.is_empty() {
@@ -47,11 +198,117 @@ impl NormalizedRequest {
 pub struct NormalizedResponse {
     pub text: String,
     pub provider_session_id: Option<String>,
+    pub metadata: ResponseMetadata,
 }
 pub type NormalizedStream = Pin<Box<dyn Stream<Item = Result<String, AdapterError>> + Send>>;
 pub struct SessionStream {
     pub stream: NormalizedStream,
     pub provider_session_id: Arc<Mutex<Option<String>>>,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FinishReason {
+    Stop,
+    Length,
+    ContentFilter,
+    Cancelled,
+    #[default]
+    Unknown,
+}
+impl FinishReason {
+    pub fn openai(self) -> Option<&'static str> {
+        match self {
+            Self::Stop => Some("stop"),
+            Self::Length => Some("length"),
+            Self::ContentFilter => Some("content_filter"),
+            Self::Cancelled | Self::Unknown => None,
+        }
+    }
+    pub fn from_public(value: Option<&str>) -> Self {
+        match value {
+            Some("stop" | "end_turn") => Self::Stop,
+            Some("length" | "max_tokens") => Self::Length,
+            Some("content_filter" | "refusal") => Self::ContentFilter,
+            Some("cancelled" | "interrupted") => Self::Cancelled,
+            _ => Self::Unknown,
+        }
+    }
+}
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub cached_input_tokens: Option<u64>,
+    pub source: String,
+    pub scope: String,
+}
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ResponseMetadata {
+    pub finish_reason: FinishReason,
+    pub usage: Option<TokenUsage>,
+    pub actual_model: Option<String>,
+    pub normalization: Option<String>,
+}
+#[derive(Clone, Debug)]
+pub enum StreamEvent {
+    Delta(String),
+    Usage(TokenUsage),
+    Completed(ResponseMetadata),
+}
+pub type EventStream = Pin<Box<dyn Stream<Item = Result<StreamEvent, AdapterError>> + Send>>;
+pub struct SessionEventStream {
+    pub stream: EventStream,
+    pub provider_session_id: Arc<Mutex<Option<String>>>,
+}
+pub fn text_stream(mut events: EventStream) -> NormalizedStream {
+    Box::pin(async_stream::try_stream! {
+        while let Some(event) = events.next().await {
+            if let StreamEvent::Delta(text) = event? { yield text; }
+        }
+    })
+}
+// Compatibility for third-party text-only Adapters: EOF says nothing about the upstream finish reason.
+pub fn legacy_events(mut text: NormalizedStream) -> EventStream {
+    Box::pin(async_stream::try_stream! {
+        while let Some(delta) = text.next().await { yield StreamEvent::Delta(delta?); }
+        yield StreamEvent::Completed(ResponseMetadata::default());
+    })
+}
+pub async fn collect_events(mut events: EventStream) -> Result<NormalizedResponse, AdapterError> {
+    let mut response = NormalizedResponse {
+        text: String::new(),
+        provider_session_id: None,
+        metadata: ResponseMetadata::default(),
+    };
+    let mut completed = false;
+    while let Some(event) = events.next().await {
+        if completed {
+            return Err(AdapterError::ProcessFailed);
+        }
+        match event? {
+            StreamEvent::Delta(text) => {
+                if completed || response.text.len() + text.len() > 8 * 1024 * 1024 {
+                    return Err(AdapterError::ProcessFailed);
+                }
+                response.text.push_str(&text);
+            }
+            StreamEvent::Usage(usage) => response.metadata.usage = Some(usage),
+            StreamEvent::Completed(mut metadata) => {
+                if completed {
+                    return Err(AdapterError::ProcessFailed);
+                }
+                metadata.usage = metadata.usage.or(response.metadata.usage.take());
+                response.metadata = metadata;
+                completed = true;
+            }
+        }
+    }
+    if !completed {
+        return Err(AdapterError::ProcessFailed);
+    }
+    Ok(response)
 }
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AdapterError {
@@ -69,6 +326,18 @@ pub enum AdapterError {
     Unsupported,
     #[error("message roles or history unsupported")]
     UnsupportedMessages,
+    #[error("parameter unsupported or outside reported range")]
+    UnsupportedParameter,
+    #[error("invalid parameter: {param} ({reason}, {layer})")]
+    InvalidParameter {
+        param: String,
+        reason: String,
+        layer: String,
+    },
+    #[error("input exceeds the upstream context limit")]
+    ContextLimit,
+    #[error("upstream refused this request")]
+    Refusal,
     #[error("provider request failed")]
     ProcessFailed,
 }
@@ -107,6 +376,20 @@ pub trait Adapter: Send + Sync {
     ) -> Result<NormalizedStream, AdapterError> {
         let response = self.invoke(request).await?;
         Ok(Box::pin(stream::once(async move { Ok(response.text) })))
+    }
+    async fn invoke_events(&self, request: NormalizedRequest) -> Result<EventStream, AdapterError> {
+        Ok(legacy_events(self.invoke_stream(request).await?))
+    }
+    async fn invoke_session_events(
+        &self,
+        request: NormalizedRequest,
+        session: Option<&str>,
+    ) -> Result<SessionEventStream, AdapterError> {
+        let legacy = self.invoke_session_stream(request, session).await?;
+        Ok(SessionEventStream {
+            stream: legacy_events(legacy.stream),
+            provider_session_id: legacy.provider_session_id,
+        })
     }
     async fn resume(
         &self,
@@ -157,6 +440,7 @@ impl Adapter for MockEcho {
             cost_mode: localmux_domain::CostMode::Unknown,
             supports_streaming: true,
             supports_session: false,
+            chat: localmux_domain::ChatCapabilities::http_text(),
         }])
     }
     async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
@@ -177,6 +461,7 @@ impl Adapter for MockEcho {
                     .join("\n")
             },
             provider_session_id: None,
+            metadata: ResponseMetadata::default(),
         })
     }
 }
@@ -199,6 +484,7 @@ mod tests {
                     content: "next".into(),
                 },
             ],
+            parameters: Default::default(),
         };
         assert!(matches!(
             request.single_user_prompt(),

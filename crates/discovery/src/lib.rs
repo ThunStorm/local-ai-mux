@@ -20,16 +20,34 @@ pub const MANIFESTS: &[Manifest] = &[
         bundles: &["Codex"],
     },
     Manifest {
+        id: "qoder-cn",
+        name: "Qoder CN",
+        executables: &["qodercn"],
+        bundles: &["Qoder CN"],
+    },
+    Manifest {
         id: "qoder",
         name: "Qoder",
         executables: &["qoder"],
         bundles: &["Qoder"],
     },
     Manifest {
+        id: "codebuddy-cn",
+        name: "CodeBuddy CN",
+        executables: &[],
+        bundles: &["CodeBuddy CN"],
+    },
+    Manifest {
         id: "codebuddy",
-        name: "CodeBuddy / WorkBuddy",
-        executables: &["codebuddy", "workbuddy"],
-        bundles: &["CodeBuddy", "WorkBuddy"],
+        name: "CodeBuddy Code",
+        executables: &["codebuddy", "cbc"],
+        bundles: &["CodeBuddy"],
+    },
+    Manifest {
+        id: "workbuddy",
+        name: "WorkBuddy",
+        executables: &[],
+        bundles: &["WorkBuddy"],
     },
     Manifest {
         id: "kimi",
@@ -76,7 +94,7 @@ pub const MANIFESTS: &[Manifest] = &[
     Manifest {
         id: "mimo",
         name: "Xiaomi MiMo",
-        executables: &[],
+        executables: &["mimo"],
         bundles: &["Xiaomi MiMo"],
     },
     Manifest {
@@ -191,6 +209,8 @@ fn default_roots() -> Vec<PathBuf> {
                 "Applications/ChatGPT.app/Contents/Resources",
                 ".local/bin",
                 ".qoder/entry",
+                ".qoder-cn/entry",
+                ".mimocode/bin",
                 ".cargo/bin",
                 "Library/pnpm",
                 ".volta/bin",
@@ -258,7 +278,8 @@ fn bundle_matches(manifest: &Manifest, stem: &str, bundle_id: &str) -> bool {
         .any(|name| name.eq_ignore_ascii_case(stem))
         || bundle_id.split('.').any(|segment| {
             segment.eq_ignore_ascii_case(manifest.id)
-                || segment.eq_ignore_ascii_case(&format!("{}cn", manifest.id))
+                || (manifest.id == "qoder-cn" && segment.eq_ignore_ascii_case("qodercn"))
+                || (manifest.id == "codebuddy-cn" && segment.eq_ignore_ascii_case("codebuddycn"))
         })
 }
 
@@ -324,22 +345,12 @@ fn scan_bundles(
                     vec!["应用包缺少可执行文件".into()]
                 },
             });
-            if manifest.id == "codebuddy" && stem.eq_ignore_ascii_case("WorkBuddy") {
-                let cli = path.join("Contents/Resources/app.asar.unpacked/cli/bin/codebuddy");
-                if cli.is_file() && seen.insert((manifest.id, cli.clone())) {
-                    output.push(DetectedApplication {
-                        app_id: manifest.id.into(),
-                        name: "WorkBuddy CLI".into(),
-                        version: version.clone(),
-                        executable: Some(cli.to_string_lossy().into_owned()),
-                        install_path: path.to_string_lossy().into_owned(),
-                        detection_source: "executable".into(),
-                        connectability: Connectability::DetectedOnly,
-                        diagnostics: vec![
-                            "发现 WorkBuddy 内置的官方 CodeBuddy CLI；连接需用户确认".into(),
-                        ],
-                    });
-                }
+            if manifest.id == "workbuddy" {
+                output
+                    .last_mut()
+                    .unwrap()
+                    .diagnostics
+                    .push("WorkBuddy 桌面版未提供可验证的官方模型 CLI".into());
             }
         }
     }
@@ -387,7 +398,7 @@ fn scan_registry(
                     }
                     let path = location.as_deref().map(PathBuf::from).unwrap_or_default();
                     if !seen.insert((manifest.id, path.clone())) {
-                        continue;
+                        break;
                     }
                     output.push(DetectedApplication {
                         app_id: manifest.id.into(),
@@ -399,6 +410,7 @@ fn scan_registry(
                         connectability: Connectability::DetectedOnly,
                         diagnostics: vec!["发现安装记录；尚未验证可执行文件和登录".into()],
                     });
+                    break;
                 }
             }
         }
@@ -474,11 +486,40 @@ mod tests {
             "com.xiaomi.mimo.desktop"
         ));
         assert!(!bundle_matches(mimo, "MImoMeter", "com.example.mimometer"));
+        let qoder = MANIFESTS
+            .iter()
+            .find(|manifest| manifest.id == "qoder")
+            .unwrap();
+        let qoder_cn = MANIFESTS
+            .iter()
+            .find(|manifest| manifest.id == "qoder-cn")
+            .unwrap();
+        assert!(bundle_matches(qoder, "Qoder", "com.qoder.app"));
+        assert!(!bundle_matches(qoder, "Qoder CN", "com.qodercn.app"));
+        assert!(bundle_matches(qoder_cn, "Qoder CN", "com.qodercn.app"));
+        let codebuddy = MANIFESTS
+            .iter()
+            .find(|manifest| manifest.id == "codebuddy")
+            .unwrap();
+        let codebuddy_cn = MANIFESTS
+            .iter()
+            .find(|manifest| manifest.id == "codebuddy-cn")
+            .unwrap();
+        assert!(!bundle_matches(
+            codebuddy,
+            "CodeBuddy CN",
+            "com.tencent.codebuddycn"
+        ));
+        assert!(bundle_matches(
+            codebuddy_cn,
+            "CodeBuddy CN",
+            "com.tencent.codebuddycn"
+        ));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn workbuddy_bundle_exposes_only_its_bundled_codebuddy_cli() {
+    fn workbuddy_bundle_does_not_claim_a_model_cli() {
         let root = tempfile::tempdir().unwrap();
         let bundle = root.path().join("WorkBuddy.app/Contents");
         let macos = bundle.join("MacOS");
@@ -493,17 +534,14 @@ mod tests {
             .to_file_xml(bundle.join("Info.plist"))
             .unwrap();
         let report = scan_with_roots(&[root.path().to_path_buf()], MANIFESTS);
-        let apps: Vec<_> = report
+        assert!(report
             .applications
             .iter()
-            .filter(|app| app.app_id == "codebuddy")
-            .collect();
-        assert_eq!(apps.len(), 2);
-        let cli = cli.canonicalize().unwrap();
-        assert!(apps
+            .any(|app| app.app_id == "workbuddy" && app.detection_source == "application_bundle"));
+        assert!(!report
+            .applications
             .iter()
-            .any(|app| app.detection_source == "executable"
-                && app.executable.as_deref() == cli.to_str()));
+            .any(|app| app.app_id == "codebuddy"));
     }
 
     #[cfg(target_os = "macos")]
@@ -511,5 +549,7 @@ mod tests {
     fn scans_official_qoder_cli_entry_directory() {
         let home = PathBuf::from(env::var_os("HOME").unwrap());
         assert!(default_roots().contains(&home.join(".qoder/entry")));
+        assert!(default_roots().contains(&home.join(".qoder-cn/entry")));
+        assert!(default_roots().contains(&home.join(".mimocode/bin")));
     }
 }

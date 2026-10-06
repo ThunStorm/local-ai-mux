@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-05",
+  "kind": "production React UI with offline IPC fixture; native IPC and live Provider not tested here",
+  "browser": "Browser plugin absent; isolated Playwright Chromium",
+  "checks": 16,
+  "passed": 16,
+  "failed": 0,
+  "results": [
+    {
+      "name": "production app identity, meaningful screen, no framework overlay",
+      "status": "PASS"
+    },
+    {
+      "name": "original application icons load and app search filters",
+      "status": "PASS"
+    },
+    {
+      "name": "model selection, opt-in parameters and actual submitted payload",
+      "status": "PASS"
+    },
+    {
+      "name": "successful multi-turn history preserved and no premature finish after invoke",
+      "status": "PASS"
+    },
+    {
+      "name": "sampling controls are mutually exclusive and reset omits fields",
+      "status": "PASS"
+    },
+    {
+      "name": "switching model archives context and disables unsupported parameters",
+      "status": "PASS"
+    },
+    {
+      "name": "navigation preserves draft and in-memory transcript",
+      "status": "PASS"
+    },
+    {
+      "name": "stop remains reachable and restores controls without completing partial text",
+      "status": "PASS"
+    },
+    {
+      "name": "errors preserve draft with no retry or model fallback",
+      "status": "PASS"
+    },
+    {
+      "name": "all desktop widths preserve main controls and prevent horizontal overflow",
+      "status": "PASS"
+    },
+    {
+      "name": "default 960 sidebar labels and manual expand work at narrow width",
+      "status": "PASS"
+    },
+    {
+      "name": "760 app list keeps three rows identifiable without a blank action column",
+      "status": "PASS"
+    },
+    {
+      "name": "narrow inspector cannot cover stop and Escape returns focus",
+      "status": "PASS"
+    },
+    {
+      "name": "dark, opaque fallback and keyboard focus render",
+      "status": "PASS"
+    },
+    {
+      "name": "message body is plain text, never HTML; no message storage or implicit auth",
+      "status": "PASS"
+    },
+    {
+      "name": "console health and no upstream network requests",
+      "status": "PASS"
+    }
+  ],
+  "errors": [],
+  "icon_policy": "Original installed assets; shared presentation frames; deterministic SVG app icon"
+}

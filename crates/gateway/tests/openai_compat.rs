@@ -142,6 +142,7 @@ async fn native_adapter_deltas_become_separate_sse_chunks() {
                 cost_mode: CostMode::Unknown,
                 supports_streaming: true,
                 supports_session: false,
+                chat: localmux_domain::ChatCapabilities::single_turn(),
             }])
         }
         async fn invoke(
@@ -318,6 +319,7 @@ async fn free_pool_tracks_current_classification_without_paid_fallback() {
                 },
                 supports_streaming: true,
                 supports_session: false,
+                chat: localmux_domain::ChatCapabilities::single_turn(),
             }])
         }
         async fn invoke(
@@ -327,6 +329,7 @@ async fn free_pool_tracks_current_classification_without_paid_fallback() {
             Ok(NormalizedResponse {
                 text: "free answer".into(),
                 provider_session_id: None,
+                metadata: Default::default(),
             })
         }
     }

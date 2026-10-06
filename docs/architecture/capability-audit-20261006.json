@@ -1,0 +1,1919 @@
+{
+  "schema_version": 1,
+  "sampled_at": "2026-10-06T19:17:15.276116+08:00",
+  "scope": "Current local API key visible connected models; metadata only; no inference",
+  "inference_requests_sent": 0,
+  "versions": {
+    "codex": "0.160.0",
+    "qoder": "1.1.64",
+    "qoder-cn": "1.1.64",
+    "codebuddy": "2.161.0"
+  },
+  "counts": {
+    "codex": 7,
+    "qoder": 17,
+    "qoder-cn": 14,
+    "codebuddy": 17
+  },
+  "catalog_sets_equal": true,
+  "public_cli_flags": {
+    "qoder": [
+      "--system-prompt",
+      "--append-system-prompt",
+      "--input-format",
+      "--output-format",
+      "--max-output-tokens",
+      "--reasoning-effort",
+      "--thinking",
+      "--thinking-budget",
+      "--context-window",
+      "--resume",
+      "--session-id",
+      "--tools",
+      "--strict-mcp-config",
+      "--setting-sources"
+    ],
+    "qoder-cn": [
+      "--system-prompt",
+      "--append-system-prompt",
+      "--input-format",
+      "--output-format",
+      "--max-output-tokens",
+      "--reasoning-effort",
+      "--thinking",
+      "--thinking-budget",
+      "--context-window",
+      "--resume",
+      "--session-id",
+      "--tools",
+      "--strict-mcp-config",
+      "--setting-sources"
+    ],
+    "codebuddy": [
+      "--system-prompt",
+      "--append-system-prompt",
+      "--input-format",
+      "--output-format",
+      "--json-schema",
+      "--resume",
+      "--session-id",
+      "--tools",
+      "--strict-mcp-config",
+      "--setting-sources"
+    ]
+  },
+  "codex_model_metadata": [
+    {
+      "id": "gpt-6.1-sol",
+      "model": "gpt-6.1-sol",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "default_reasoning_effort": "low",
+      "source": "installed Codex official App Server model/list; no turn"
+    },
+    {
+      "id": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "default_reasoning_effort": "low",
+      "source": "installed Codex official App Server model/list; no turn"
+    },
+    {
+      "id": "gpt-6-sol",
+      "model": "gpt-6-sol",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "default_reasoning_effort": "medium",
+      "source": "installed Codex official App Server model/list; no turn"
+    },
+    {
+      "id": "gpt-6-luna",
+      "model": "gpt-6-luna",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_reasoning_effort": "medium",
+      "source": "installed Codex official App Server model/list; no turn"
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "model": "gpt-5.6-sol",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "default_reasoning_effort": "low",
+      "source": "installed Codex official App Server model/list; no turn"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "model": "gpt-5.6-terra",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "default_reasoning_effort": "medium",
+      "source": "installed Codex official App Server model/list; no turn"
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_reasoning_effort": "medium",
+      "source": "installed Codex official App Server model/list; no turn"
+    }
+  ],
+  "models": [
+    {
+      "id": "codex/gpt-6.1-sol",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codex/gpt-6-astra",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codex/gpt-6-sol",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codex/gpt-6-luna",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codex/gpt-5.6-sol",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codex/gpt-5.6-terra",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codex/gpt-5.6-luna",
+      "adapter": "codex",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "C",
+      "native_exact_parameters_status": "PARTIAL_METADATA",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Auto",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Ultimate",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Performance",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Efficient",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Sonus",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Cantus",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Qwen3.8-Max",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Qwen3.8-Flash",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Qwen3.7-Max",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Qwen3.7-Plus",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Kimi-K3",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/Kimi-K2.8-Preview",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/GLM-5.3",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/GLM-5.3-Flash",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/DeepSeek-V4-Pro",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/DeepSeek-Flash",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder/MiniMax-M3",
+      "adapter": "qoder",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "Q",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Auto",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Qwen3.8-Max",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Qwen3.8-Flash",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Qwen3.7-Max",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Qwen3.7-Plus",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Qwen3.7-Flash",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/DeepSeek-V4-Pro",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/DeepSeek-Flash",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/GLM-5.3",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/GLM-5.3-Flash",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/GLM-5.2",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Kimi-K3",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/Kimi-K2.8-Preview",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "qoder-cn/MiniMax-M2.7",
+      "adapter": "qoder-cn",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "QN",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/hy4-preview",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/hy3",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/hy3-x",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/space-bunny",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/deepseek-v4.1-flash",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/glm-5.3",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/glm-5.3-flash",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/glm-5.2",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/glm-5.1",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/glm-5v-turbo",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/minimax-m3",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/minimax-m2.7",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/kimi-k3-1",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/kimi-k2.8-preview",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/kimi-k2.7",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/kimi-k2.6",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    },
+    {
+      "id": "codebuddy/deepseek-v4-pro",
+      "adapter": "codebuddy",
+      "runtime_mux": {
+        "stream": true,
+        "chat": {
+          "history": "UNSUPPORTED",
+          "max_tokens": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "source": "官方 CLI/App Server 单轮文本桥",
+          "system": "UNSUPPORTED",
+          "temperature": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          },
+          "top_p": {
+            "max": null,
+            "min": 0.0,
+            "support": "UNSUPPORTED"
+          }
+        }
+      },
+      "public_bridge_profile": "B",
+      "native_exact_parameters_status": "UNKNOWN",
+      "exact_output_context_limits_status": "UNKNOWN",
+      "live_verified_in_this_audit": false
+    }
+  ],
+  "public_appserver_schema": {
+    "version": "0.160.0",
+    "source": "official codex app-server generate-json-schema; selected public field names only",
+    "thread_start_instruction_fields": [
+      "baseInstructions",
+      "developerInstructions"
+    ],
+    "turn_start_control_fields": [
+      "effort",
+      "input",
+      "outputSchema"
+    ],
+    "token_usage_fields": [
+      "cacheWriteInputTokens",
+      "cachedInputTokens",
+      "inputTokens",
+      "outputTokens",
+      "reasoningOutputTokens",
+      "totalTokens"
+    ]
+  }
+}

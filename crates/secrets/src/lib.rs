@@ -11,6 +11,39 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, reference: &str) -> Result<(), SecretError>;
 }
 
+/// Development-only secrets: discarded when the desktop process exits.
+#[derive(Default)]
+pub struct MemorySecretStore {
+    values: std::sync::Mutex<std::collections::HashMap<String, String>>,
+}
+
+impl SecretStore for MemorySecretStore {
+    fn put(&self, reference: &str, value: &str) -> Result<(), SecretError> {
+        self.values
+            .lock()
+            .map_err(|_| SecretError::Unavailable)?
+            .insert(reference.to_owned(), value.to_owned());
+        Ok(())
+    }
+
+    fn get(&self, reference: &str) -> Result<Option<String>, SecretError> {
+        Ok(self
+            .values
+            .lock()
+            .map_err(|_| SecretError::Unavailable)?
+            .get(reference)
+            .cloned())
+    }
+
+    fn delete(&self, reference: &str) -> Result<(), SecretError> {
+        self.values
+            .lock()
+            .map_err(|_| SecretError::Unavailable)?
+            .remove(reference);
+        Ok(())
+    }
+}
+
 pub struct OsSecretStore {
     service: String,
 }
@@ -61,5 +94,20 @@ mod tests {
         let store = OsSecretStore::new("app.localmux.desktop");
         assert!(store.entry("../other-app").is_err());
         assert!(store.entry("").is_err());
+    }
+
+    #[test]
+    fn memory_secrets_disappear_with_store() {
+        let store = MemorySecretStore::default();
+        store.put("api.key.test", "secret").unwrap();
+        assert_eq!(
+            store.get("api.key.test").unwrap().as_deref(),
+            Some("secret")
+        );
+        drop(store);
+        assert!(MemorySecretStore::default()
+            .get("api.key.test")
+            .unwrap()
+            .is_none());
     }
 }

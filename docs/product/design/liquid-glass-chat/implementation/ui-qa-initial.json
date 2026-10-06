@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-04",
+  "kind": "production React UI with offline IPC fixture; native IPC and live Provider not tested here",
+  "browser": "Browser plugin absent; isolated Playwright Chromium",
+  "checks": 14,
+  "passed": 1,
+  "failed": 13,
+  "results": [
+    {
+      "name": "production app identity, meaningful screen, no framework overlay",
+      "status": "PASS"
+    },
+    {
+      "name": "illustrated application icons load and app search filters",
+      "status": "FAIL",
+      "reason": "locator.waitFor: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('listitem').first() to be visible\u001b[22m\n"
+    },
+    {
+      "name": "model selection, opt-in parameters and actual submitted payload",
+      "status": "FAIL",
+      "reason": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '试对话', exact: true }).first()\u001b[22m\n"
+    },
+    {
+      "name": "successful multi-turn history preserved and no premature finish after invoke",
+      "status": "FAIL",
+      "reason": "locator.fill: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('消息输入', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "sampling controls are mutually exclusive and reset omits fields",
+      "status": "FAIL",
+      "reason": "locator.check: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('checkbox', { name: 'Top P', exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "switching model archives context and disables unsupported parameters",
+      "status": "FAIL",
+      "reason": "locator.selectOption: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('对话模型', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "navigation preserves draft and in-memory transcript",
+      "status": "FAIL",
+      "reason": "locator.fill: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('消息输入', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "stop remains reachable and restores controls without completing partial text",
+      "status": "FAIL",
+      "reason": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '发送', exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "errors preserve draft with no retry or model fallback",
+      "status": "FAIL",
+      "reason": "locator.fill: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('消息输入', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "all desktop widths preserve main controls and prevent horizontal overflow",
+      "status": "FAIL",
+      "reason": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '关闭参数', exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "narrow inspector cannot cover stop and Escape returns focus",
+      "status": "FAIL",
+      "reason": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '参数', exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "dark, opaque fallback and keyboard focus render",
+      "status": "FAIL",
+      "reason": "locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('偏好设置', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "message body is plain text, never HTML; no message storage or implicit auth",
+      "status": "FAIL",
+      "reason": "locator.fill: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('消息输入', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "console health and no upstream network requests",
+      "status": "FAIL",
+      "reason": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   \"Cannot read properties of undefined (reading 'length')\"\n+ ]\n- []\n"
+    }
+  ],
+  "errors": [
+    "Cannot read properties of undefined (reading 'length')"
+  ]
+}

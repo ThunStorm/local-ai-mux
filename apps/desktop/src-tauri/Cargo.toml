@@ -23,6 +23,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-updater = "2"
 localmux-core = { path = "../../../crates/core" }
+localmux-api-types = { path = "../../../crates/api-types" }
 localmux-adapter-codex = { path = "../../../crates/adapters/codex" }
 localmux-adapter-qoder = { path = "../../../crates/adapters/qoder" }
 localmux-adapter-codebuddy = { path = "../../../crates/adapters/codebuddy" }
@@ -36,8 +37,18 @@ localmux-secrets = { path = "../../../crates/secrets" }
 localmux-storage = { path = "../../../crates/storage" }
 localmux-telemetry = { path = "../../../crates/telemetry" }
 tracing = "0.1"
-tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["net", "process", "rt", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 secrecy = "0.10"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+tempfile = "3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSGlassEffectView", "NSView", "NSColor", "NSWorkspace", "NSAccessibility", "NSResponder", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+axum = "0.8"

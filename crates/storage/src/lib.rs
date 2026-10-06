@@ -55,6 +55,11 @@ mod tests {
         .await
         .expect("query schema");
         assert_eq!(count, 1);
+        let version: i64 = sqlx::query_scalar("SELECT max(version) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await
+            .expect("latest migration");
+        assert_eq!(version, 10);
         pool.close().await;
         std::fs::remove_file(&path).ok();
     }

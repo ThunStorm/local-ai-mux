@@ -1,0 +1,390 @@
+   Compiling localmux-adapter-kimi v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/kimi)
+   Compiling localmux-adapter-ark v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/ark)
+   Compiling localmux-adapter-glm v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/glm)
+   Compiling localmux-gateway v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/gateway)
+   Compiling localmux-desktop v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/apps/desktop/src-tauri)
+   Compiling localmux-adapter-codex v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/codex)
+   Compiling localmux-adapter-qoder v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/qoder)
+   Compiling localmux-adapter-codebuddy v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapters/codebuddy)
+   Compiling localmux-storage v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/storage)
+   Compiling localmux-adapter-sdk v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/adapter-sdk)
+   Compiling localmux-security v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/security)
+   Compiling localmux-router v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/router)
+   Compiling localmux-api-types v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/api-types)
+   Compiling localmux-domain v0.1.0 (/Volumes/D/Projects/Codework/Git/local-ai-mux-phase0/crates/domain)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.78s
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_ark-eff1d63fb07fd58f)
+
+running 1 test
+test tests::stays_on_coding_plan_endpoint ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_codebuddy-f73b19a636955d3d)
+
+running 2 tests
+test tests::only_answer_deltas_are_exposed ... ok
+test tests::selected_model_must_be_exact_identifier ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol.rs (target/debug/deps/protocol-2882df93323faf9f)
+
+running 1 test
+test selected_model_stream_and_session_fixture ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_codex-258ce8bcc57c7ee4)
+
+running 3 tests
+test tests::catalog_is_dynamic_and_never_assumes_free ... ok
+test tests::official_rate_limit_window_is_a_percentage_not_credit_balance ... ok
+test tests::rpc_auth_error_is_normalized ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol.rs (target/debug/deps/protocol-a6b075c970626a0b)
+
+running 1 test
+test official_protocol_shape_handles_catalog_turn_and_resume ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_glm-d913afa5eb8850f5)
+
+running 1 test
+test tests::stays_on_coding_plan_endpoint ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_kimi-46e979ad28a0579a)
+
+running 1 test
+test tests::unsupported_runtime_never_exposes_a_model ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_qoder-8ee3e47241dc5bc1)
+
+running 3 tests
+test tests::only_text_deltas_are_exposed ... ok
+test tests::installed_cli_table_is_a_reported_catalog ... ok
+test tests::only_explicit_catalog_entries_are_models ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol.rs (target/debug/deps/protocol-923c6b7118c232c4)
+
+running 1 test
+test headless_cli_catalog_stream_and_session_fixture ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_adapter_sdk-3ae2890912c16558)
+
+running 3 tests
+test tests::agent_role_boundary_rejects_history ... ok
+test cli::tests::cli_auth_failure_is_not_reported_as_unsupported ... ok
+test provider_http::capability_tests::public_model_metadata_is_exactly_scoped_and_missing_fields_stay_unknown ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/provider_http.rs (target/debug/deps/provider_http-5e21da0ab7eb620e)
+
+running 1 test
+test provider_uses_exact_configured_endpoint_and_parses_sse ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_api_types-8b3ab1924637dede)
+
+running 1 test
+test responses_tests::accepts_only_text_input ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_core-b8f84c63f67a88e5)
+
+running 1 test
+test tests::data_directory_is_absolute ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_desktop_lib-cac2c09b8cdbff63)
+
+running 8 tests
+test playground::tests::errors_never_expose_gateway_message_or_unknown_codes ... ok
+test playground::tests::sse_preserves_split_utf8_multiline_and_crlf ... ok
+test tests::mimocode_token_never_goes_to_a_non_loopback_endpoint ... ok
+test playground::tests::early_stop_cannot_start_inference_or_cancel_another_window ... ok
+test playground::tests::cancellation_is_bound_to_window_and_request ... ok
+test playground::tests::missing_done_is_not_reported_as_completed ... ok
+test playground::tests::dropping_reception_releases_the_server_stream ... ok
+test playground::tests::bridge_consumes_actual_mock_gateway_json_and_sse ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/localmux_desktop-98b7bb2353e97918)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_discovery-232b3cd13826cfc5)
+
+running 4 tests
+test tests::bundle_id_requires_exact_segment ... ok
+test tests::detects_executable_without_reading_content ... ok
+test tests::scans_official_qoder_cli_entry_directory ... ok
+test tests::workbuddy_bundle_does_not_claim_a_model_cli ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_domain-0892eef8234ca16b)
+
+running 1 test
+test tests::unknown_is_not_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_gateway-5f65aca3834a3aaf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/chat_capabilities.rs (target/debug/deps/chat_capabilities-67d3e49e709b86d4)
+
+running 2 tests
+test chat_directory_obeys_key_scope_connection_filters_and_revocation ... ok
+test reported_parameters_pass_through_and_unknown_or_out_of_range_never_invoke ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/openai_compat.rs (target/debug/deps/openai_compat-aca751f9c71b966a)
+
+running 5 tests
+test desktop_gateway_has_no_synthetic_model_before_connection ... ok
+test native_adapter_deltas_become_separate_sse_chunks ... ok
+test free_pool_tracks_current_classification_without_paid_fallback ... ok
+test mock_api_requires_key_and_supports_chat_stream_and_revocation ... ok
+test three_offline_adapters_merge_models_and_route_without_collisions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/responses_compat.rs (target/debug/deps/responses_compat-8f32f95d35f5d6d8)
+
+running 2 tests
+test stateless_mock_response_cannot_fake_resume ... ok
+test responses_chain_uses_native_session_and_rejects_stale_branch ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/security_policy.rs (target/debug/deps/security_policy-3fe555b621297eac)
+
+running 2 tests
+test route_connection_limit_rate_limit_and_body_limit_are_enforced ... ok
+test agent_requires_explicit_profile_and_scope_on_both_apis ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_quota-c4c1405218a58d62)
+
+running 3 tests
+test tests::unknown_or_estimated_quota_never_claims_available ... ok
+test tests::refresh_is_debounced_per_connection ... ok
+test tests::separate_windows_keep_independent_resets ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_router-00f98cbe2d7618bb)
+
+running 4 tests
+test tests::breaker_allows_half_open_after_reset ... ok
+test tests::reserve_requires_provider_reported_availability_and_opt_in ... ok
+test tests::free_never_falls_back_to_unknown_or_metered ... ok
+test tests::cheap_prefers_free_and_best_requires_config ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_secrets-fa02e45c2ef37c8f)
+
+running 2 tests
+test tests::rejects_untrusted_credential_reference_before_os_access ... ok
+test tests::memory_secrets_disappear_with_store ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_security-738d2d4e0184dc97)
+
+running 3 tests
+test tests::default_key_blocks_agents_and_restricts_routes_when_set ... ok
+test tests::fixed_window_limits_each_key_independently ... ok
+test tests::unsupported_profiles_fail_closed ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_storage-78ed627f0a1ee8c6)
+
+running 6 tests
+test tests::quota_buckets_preserve_independent_windows_on_failed_refresh ... ok
+test tests::added_application_is_separate_from_connection ... ok
+test tests::default_key_rotation_revokes_old_key_atomically ... ok
+test tests::initializes_schema ... ok
+test routing_storage_tests::persists_route_policy_and_reported_quota ... ok
+test session_storage_tests::maps_latest_response_without_persisting_prompt ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (target/debug/deps/localmux_telemetry-baa4b313623cab61)
+
+running 1 test
+test tests::masks_sensitive_fields_and_paths ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Doc-tests localmux_adapter_ark
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_adapter_codebuddy
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_adapter_codex
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_adapter_glm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_adapter_kimi
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_adapter_qoder
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_adapter_sdk
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_api_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_desktop_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_discovery
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_domain
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_gateway
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_quota
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_router
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_secrets
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_security
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_storage
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests localmux_telemetry
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+$ pnpm --filter @localmux/desktop typecheck
+$ tsc --noEmit
+$ pnpm --filter @localmux/desktop test
+$ node --test tests/*.test.mjs
+✔ chat payload preserves successful roles and omits unused parameters (0.687916ms)
+✔ single-turn sends only current user and rejects hidden system/history capability (0.138ms)
+✔ unknown, nonfinite, conflicting and out-of-range overrides are rejected (0.113208ms)
+✔ model contexts never cross and UTF-8 byte limit never truncates (1.751709ms)
+✔ late, duplicate and mismatched-model events do not belong to active request (0.06175ms)
+✔ desktop config points to the workspace frontend scripts (0.661292ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 84.519417
+$ pnpm --filter @localmux/desktop build
+$ tsc && vite build
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 27 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.46 kB │ gzip:  0.29 kB
+dist/assets/index-CjECfSOJ.css   23.62 kB │ gzip:  5.36 kB
+dist/assets/index-Doo5CwzF.js   291.18 kB │ gzip: 91.65 kB
+
+✓ built in 97ms

@@ -5,14 +5,17 @@ use axum::{
     extract::State,
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     response::{
-        sse::{Event, Sse},
+        sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
     },
     routing::{get, post},
     Json, Router,
 };
 use futures_util::StreamExt;
-use localmux_adapter_sdk::{Adapter, AdapterError, MockEcho, NormalizedMessage, NormalizedRequest};
+use localmux_adapter_sdk::{
+    Adapter, AdapterError, MockEcho, NormalizedMessage, NormalizedRequest, ResponseMetadata,
+    StreamEvent, TokenUsage,
+};
 use localmux_api_types::{
     AssistantMessage, ChatRequest, ChatResponse, Choice, ModelList, ModelObject, Usage,
 };
@@ -36,6 +39,7 @@ use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
 pub const DEFAULT_PORT: u16 = 8317;
+pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_BODY: usize = 1024 * 1024;
 type CatalogCache = Arc<Mutex<HashMap<String, (Instant, Vec<ModelDescriptor>)>>>;
 
@@ -280,6 +284,7 @@ impl GatewayState {
                     role: "user".into(),
                     content: prompt.into(),
                 }],
+                parameters: Default::default(),
             })
             .await?;
         if response.text.trim().is_empty() {
@@ -302,9 +307,12 @@ pub fn router(state: GatewayState) -> Router {
     Router::new()
         .route(
             "/api/health",
-            get(|| async { Json(serde_json::json!({"status":"ok"})) }),
+            get(|State(state): State<GatewayState>| async move {
+                Json(serde_json::json!({"status":"ok","active_tasks":state.active_tasks()}))
+            }),
         )
         .route("/v1/models", get(models))
+        .route("/api/chat/models", get(chat_models))
         .route("/v1/chat/completions", post(chat))
         .route("/v1/responses", post(responses::create))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY))
@@ -375,7 +383,7 @@ async fn authorized(
     }
 }
 fn error(status: StatusCode, code: &str, message: &str) -> Response {
-    (status, Json(serde_json::json!({"error":{"message":message,"type":"localmux_error","code":code,"error_code":code}}))).into_response()
+    (status, Json(serde_json::json!({"error":{"message":message,"type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"unknown","retryable":false,"request_id":Uuid::new_v4().to_string()}}))).into_response()
 }
 fn target_allowed(
     record: &localmux_storage::ApiKeyRecord,
@@ -447,6 +455,41 @@ fn route_error(kind: RouteError) -> Response {
         ),
     }
 }
+
+async fn chat_models(State(state): State<GatewayState>, headers: HeaderMap) -> Response {
+    let key = match authorized(&state, &headers, "models:read").await {
+        Ok(key) => key,
+        Err(response) => return *response,
+    };
+    let candidates = state.available_candidates().await;
+    let adapters = state.adapters.read().await.clone();
+    let catalog = state.catalog.lock().await;
+    let mut data = Vec::new();
+    for candidate in candidates {
+        let Some(adapter) = adapters
+            .iter()
+            .find(|adapter| adapter.id() == candidate.connection_id)
+        else {
+            continue;
+        };
+        if !target_allowed(
+            &key,
+            &candidate.model_id,
+            &candidate.model_id,
+            adapter.as_ref(),
+        ) {
+            continue;
+        }
+        if let Some(model) = catalog
+            .values()
+            .flat_map(|(_, models)| models)
+            .find(|model| model.id == candidate.model_id)
+        {
+            data.push(serde_json::json!({"id":model.id,"provider":model.provider_id,"stream":model.supports_streaming,"chat":model.chat,"connection_id":model.connection_id.as_deref().unwrap_or(adapter.id()),"adapter":adapter.id(),"identity_scope":"adapter_compat"}));
+        }
+    }
+    Json(serde_json::json!({"schema_version":2,"data":data})).into_response()
+}
 fn breaker_error(state: &GatewayState, adapter_id: &str, kind: &AdapterError) {
     if matches!(
         kind,
@@ -486,6 +529,14 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             )
         }
     };
+    if request.stream_options.is_some() && !request.stream {
+        return protocol_error(
+            "LMX_INVALID_REQUEST",
+            "stream_options",
+            "stream_required",
+            "gateway",
+        );
+    }
     if request.model.is_empty()
         || request.messages.is_empty()
         || request
@@ -498,29 +549,43 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             "Invalid model, messages, or temperature",
         );
     }
-    if request.max_tokens == Some(0) {
+    if request.max_tokens == Some(0)
+        || request
+            .top_p
+            .is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
+    {
         return error(
             StatusCode::BAD_REQUEST,
             "LMX_INVALID_REQUEST",
-            "max_tokens must be positive",
-        );
-    }
-    if request.temperature.is_some() || request.max_tokens.is_some() {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "LMX_UNSUPPORTED_PARAMETER",
-            "temperature and max_tokens are not supported by this text subset",
+            "max_tokens must be positive and top_p must be between 0 and 1",
         );
     }
     if request.messages.iter().any(|message| {
-        !matches!(message.role.as_str(), "system" | "user" | "assistant")
-            || !message.content.is_string()
+        !matches!(
+            message.role.as_str(),
+            "system" | "developer" | "user" | "assistant"
+        ) || !message.content.is_string()
     }) {
         return error(
             StatusCode::BAD_REQUEST,
             "LMX_INVALID_REQUEST",
             "Only text system, user, and assistant messages are supported",
         );
+    }
+    let mut body_started = false;
+    for message in &request.messages {
+        if matches!(message.role.as_str(), "system" | "developer") {
+            if body_started {
+                return protocol_error(
+                    "LMX_UNSUPPORTED_MESSAGES",
+                    "messages",
+                    "non_leading_instruction",
+                    "gateway",
+                );
+            }
+        } else {
+            body_started = true;
+        }
     }
     let Some(prompt) = request
         .messages
@@ -572,7 +637,80 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
         );
     }
     let adapter_id = adapter.id().to_owned();
+    let parameters = localmux_adapter_sdk::ChatParameters {
+        temperature: request.temperature,
+        top_p: request.top_p,
+        max_tokens: request.max_tokens,
+        max_completion_tokens: request.max_completion_tokens,
+        reasoning_effort: request.reasoning_effort.clone(),
+        response_format: match request
+            .response_format
+            .clone()
+            .map(serde_json::from_value)
+            .transpose()
+        {
+            Ok(value) => value,
+            Err(_) => {
+                return protocol_error(
+                    "LMX_INVALID_REQUEST",
+                    "response_format",
+                    "malformed_format",
+                    "gateway",
+                )
+            }
+        },
+    };
+    state.available_candidates().await;
+    let descriptor = state
+        .catalog
+        .lock()
+        .await
+        .get(&adapter_id)
+        .and_then(|(_, models)| models.iter().find(|model| model.id == actual_model))
+        .cloned();
+    let Some(descriptor) = descriptor else {
+        return adapter_error(AdapterError::ModelUnavailable);
+    };
+    if let Err(kind) = parameters.validate(&descriptor.chat) {
+        return adapter_error(kind);
+    }
+    if request.stream && !descriptor.supports_streaming {
+        return protocol_error(
+            "LMX_UNSUPPORTED_PARAMETER",
+            "stream",
+            "unsupported",
+            "adapter",
+        );
+    }
+    if request.messages.iter().any(|m| m.role == "system")
+        && descriptor.chat.system != localmux_domain::Support::Supported
+    {
+        return protocol_error(
+            "LMX_UNSUPPORTED_MESSAGES",
+            "messages",
+            "not_implemented",
+            "adapter",
+        );
+    }
+    if request.messages.iter().any(|m| m.role == "developer")
+        && descriptor.chat.developer != localmux_domain::Support::Supported
+    {
+        return protocol_error(
+            "LMX_UNSUPPORTED_MESSAGES",
+            "messages",
+            "role_priority_unmapped",
+            descriptor
+                .chat
+                .details
+                .get("developer")
+                .and_then(|d| d.limiting_layer.as_deref())
+                .unwrap_or("adapter"),
+        );
+    }
     if !virtual_route {
+        if let Some(response) = connection_cooldown(&state, &adapter_id) {
+            return response;
+        }
         let exact = [RouteCandidate {
             model_id: actual_model.clone(),
             connection_id: adapter_id.clone(),
@@ -602,13 +740,28 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
                 content: message.content.as_str().unwrap_or_default().to_owned(),
             })
             .collect(),
+        parameters,
     };
+    if descriptor.chat.history != localmux_domain::Support::Supported {
+        if let Err(kind) = normalized
+            .text_instructions(descriptor.chat.developer == localmux_domain::Support::Supported)
+        {
+            return adapter_error(kind);
+        }
+    }
+    let normalization = (normalized.messages.len() > 1
+        && descriptor.chat.history != localmux_domain::Support::Supported)
+        .then(|| "leading_instructions_v1".to_owned());
+    let include_usage = request
+        .stream_options
+        .as_ref()
+        .is_some_and(|options| options.include_usage);
     let run = state.begin_run();
     let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
     let created = now();
     if request.stream {
         let mut provider_stream =
-            match tokio::time::timeout(Duration::from_secs(30), adapter.invoke_stream(normalized))
+            match tokio::time::timeout(Duration::from_secs(30), adapter.invoke_events(normalized))
                 .await
             {
                 Ok(Ok(stream)) => stream,
@@ -633,42 +786,69 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             let _run = run;
             let role = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]});
             yield Ok::<Event, Infallible>(Event::default().data(role.to_string()));
-            let mut first = true;
-            let mut failed = false;
+            let mut failure = None;
+            let mut metadata = ResponseMetadata::default();
+            let mut completed = false;
+            let mut output_bytes = 0usize;
             loop {
-                let wait = if first { Duration::from_secs(30) } else { Duration::from_secs(120) };
-                match tokio::time::timeout(wait, provider_stream.next()).await {
-                    Ok(Some(Ok(delta))) => {
-                        first = false;
+                match tokio::time::timeout(STREAM_IDLE_TIMEOUT, provider_stream.next()).await {
+                    Ok(Some(Ok(StreamEvent::Delta(delta)))) if !completed => {
+                        output_bytes += delta.len();
+                        if output_bytes > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
                         let chunk = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"content":delta},"finish_reason":null}]});
                         yield Ok(Event::default().data(chunk.to_string()));
                     },
-                    Ok(None) => { route_state.breaker.success(&adapter_id); break; },
-                    Ok(Some(Err(kind))) => { breaker_error(&route_state, &adapter_id, &kind); failed = true; break; },
-                    Err(_) => { route_state.breaker.open(&adapter_id, Instant::now(), Duration::from_secs(30)); failed = true; break; },
+                    Ok(Some(Ok(StreamEvent::Usage(usage)))) if !completed => { metadata.usage = Some(usage); },
+                    Ok(Some(Ok(StreamEvent::Completed(mut reported)))) if !completed => {
+                        reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported; completed = true;
+                    },
+                    Ok(Some(Ok(_))) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
+                    Ok(None) => { if completed { route_state.breaker.success(&adapter_id); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
+                    Ok(Some(Err(kind))) => { breaker_error(&route_state, &adapter_id, &kind); failure = Some(adapter_error_details(&kind).1); break; },
+                    Err(_) => { route_state.breaker.open(&adapter_id, Instant::now(), Duration::from_secs(30)); failure = Some("LMX_PROCESS_TIMEOUT"); break; },
                 }
             }
-            if failed {
-                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":"LMX_PROVIDER_UNAVAILABLE"}}).to_string()));
+            if let Some(code) = failure {
+                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"public_interface","retryable":false,"request_id":id}}).to_string()));
             } else {
-                let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+                let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":metadata.finish_reason.openai()}],"localmux":wire_metadata(&metadata, &id, &model, normalization.as_deref())});
                 yield Ok(Event::default().data(last.to_string()));
+                if include_usage {
+                    let usage = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[],"usage":wire_usage(metadata.usage.as_ref()),"localmux":wire_metadata(&metadata,&id,&model,normalization.as_deref())});
+                    yield Ok(Event::default().data(usage.to_string()));
+                }
             }
             yield Ok(Event::default().data("[DONE]"));
         };
-        return Sse::new(events).into_response();
+        return Sse::new(events)
+            .keep_alive(KeepAlive::default())
+            .into_response();
     }
-    let text = match adapter.invoke(normalized).await {
-        Ok(response) => {
+    let response = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, adapter.invoke(normalized)).await
+    {
+        Ok(Ok(response)) => {
             state.breaker.success(&adapter_id);
-            response.text
+            response
         }
-        Err(error_kind) => {
+        Ok(Err(error_kind)) => {
             breaker_error(&state, &adapter_id, &error_kind);
             return adapter_error(error_kind);
         }
+        Err(_) => {
+            return error(
+                StatusCode::GATEWAY_TIMEOUT,
+                "LMX_PROCESS_TIMEOUT",
+                "Upstream timed out",
+            )
+        }
     };
     Json(ChatResponse {
+        localmux: wire_metadata(
+            &response.metadata,
+            &id,
+            &actual_model,
+            normalization.as_deref(),
+        ),
         id,
         object: "chat.completion",
         created,
@@ -677,20 +857,83 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             index: 0,
             message: AssistantMessage {
                 role: "assistant",
-                content: text,
+                content: response.text,
             },
-            finish_reason: "stop",
+            finish_reason: response.metadata.finish_reason.openai(),
         }],
-        usage: Usage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-        },
+        usage: wire_usage(response.metadata.usage.as_ref()),
     })
     .into_response()
 }
+fn protocol_error(code: &str, param: &str, reason: &str, layer: &str) -> Response {
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":{"message":"Request cannot be honored by the selected public interface","type":"localmux_error","code":code,"error_code":code,"param":param,"reason_code":reason,"limiting_layer":layer,"retryable":false,"request_id":Uuid::new_v4().to_string()}}))).into_response()
+}
+fn wire_usage(usage: Option<&TokenUsage>) -> Option<Usage> {
+    usage.map(|usage| Usage {
+        prompt_tokens: usage.input_tokens,
+        completion_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+    })
+}
+fn wire_metadata(
+    metadata: &ResponseMetadata,
+    id: &str,
+    resolved_model: &str,
+    normalization: Option<&str>,
+) -> serde_json::Value {
+    let mut value = serde_json::to_value(metadata).unwrap_or_default();
+    value["request_id"] = serde_json::json!(id);
+    value["resolved_model"] = serde_json::json!(resolved_model);
+    value["normalization"] = serde_json::json!(normalization.or(metadata.normalization.as_deref()));
+    value["usage_status"] = serde_json::json!(if metadata.usage.is_some() {
+        "provider_reported"
+    } else {
+        "unknown"
+    });
+    value["cancellation_guarantee"] = serde_json::json!("local_receive_only");
+    value
+}
+fn connection_cooldown(state: &GatewayState, adapter_id: &str) -> Option<Response> {
+    (!state.breaker.available(adapter_id, Instant::now())).then(|| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LMX_PROVIDER_COOLDOWN",
+            "Provider is temporarily cooling down; retry manually later",
+        )
+    })
+}
 fn adapter_error(kind: AdapterError) -> Response {
-    let (status, code, message) = match kind {
+    if let AdapterError::InvalidParameter {
+        param,
+        reason,
+        layer,
+    } = &kind
+    {
+        return protocol_error("LMX_UNSUPPORTED_PARAMETER", param, reason, layer);
+    }
+    if matches!(kind, AdapterError::UnsupportedMessages) {
+        return protocol_error(
+            "LMX_UNSUPPORTED_MESSAGES",
+            "messages",
+            "role_or_history_unmapped",
+            "adapter",
+        );
+    }
+    let (status, code, message) = adapter_error_details(&kind);
+    error(status, code, message)
+}
+fn adapter_error_details(kind: &AdapterError) -> (StatusCode, &'static str, &'static str) {
+    match kind {
+        AdapterError::ContextLimit => (
+            StatusCode::BAD_REQUEST,
+            "LMX_CONTEXT_LIMIT",
+            "Upstream input context limit exceeded",
+        ),
+        AdapterError::Refusal => (
+            StatusCode::BAD_REQUEST,
+            "LMX_REFUSAL",
+            "Upstream refused this request",
+        ),
         AdapterError::AuthRequired => (
             StatusCode::UNAUTHORIZED,
             "LMX_AUTH_REQUIRED",
@@ -721,11 +964,15 @@ fn adapter_error(kind: AdapterError) -> Response {
             "LMX_UNSUPPORTED_MESSAGES",
             "This model cannot preserve chat roles or message history",
         ),
+        AdapterError::UnsupportedParameter | AdapterError::InvalidParameter { .. } => (
+            StatusCode::BAD_REQUEST,
+            "LMX_UNSUPPORTED_PARAMETER",
+            "Parameter unsupported, unknown, or outside reported range",
+        ),
         AdapterError::ProviderUnavailable | AdapterError::ProcessFailed => (
             StatusCode::BAD_GATEWAY,
             "LMX_PROVIDER_UNAVAILABLE",
             "Provider unavailable",
         ),
-    };
-    error(status, code, message)
+    }
 }

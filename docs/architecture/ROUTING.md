@@ -7,3 +7,5 @@ Phase 6 的 exact route 使用 `provider/model`；虚拟路由为 `free`、`chea
 `cheap` 顺序为 FREE → 已确认可用 RESERVE → SUBSCRIPTION，同层按上游倍率、用户优先级、模型 ID 排序；倍率未知会排在同层最后。`balanced` 必须先由用户填写优先级；计费模型还需显式开启 `allow_metered`。`best` 仅指向用户指定的 exact model，不自动评判“最佳”。授权失败、离线、不支持和已熔断连接会被跳过。429/额度耗尽触发短期熔断，到期后允许半开尝试，成功后关闭熔断。
 
 同一 Conversation 的黏性路由在 Phase 7 实现。当前所有真实 Adapter 的费用分类都是 UNKNOWN，因此默认 free 池为空；测试中的动态免费示例只是合成 Adapter，不代表真实供应商已报告免费能力。
+
+2026-10-06：连接熔断与型号不存在是不同状态。指定实际型号的 Chat/Responses 请求遇到连接冷却返回 HTTP 503 `LMX_PROVIDER_COOLDOWN`，目录不因普通短期连接错误删除型号；没有可用 Adapter/型号时仍沿用模型不可用错误。流错误/空闲超时仍触发按连接冷却，不绕过熔断、自动换型号或自动重试。

@@ -28,7 +28,7 @@ localmux-adapter-codebuddy = { path = "../adapters/codebuddy" }
 async-trait = "0.1"
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 
 [features]
 compat-harness = []

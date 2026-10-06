@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LocalMux",
+  "productName": "LocalAiMux",
   "version": "0.1.0",
   "identifier": "app.localmux.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "LocalMux · 智汇枢",
+        "title": "LocalAiMux",
         "width": 960,
         "height": 680,
         "minWidth": 760,

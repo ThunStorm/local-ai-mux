@@ -1,0 +1,101 @@
+{
+  "date": "2026-10-03",
+  "kind": "design prototype only",
+  "browser": "Playwright Chromium headless shell",
+  "checks": 20,
+  "passed": 20,
+  "failed": 0,
+  "results": [
+    {
+      "name": "design label and six navigation entries",
+      "status": "PASS"
+    },
+    {
+      "name": "wide screenshot has reference app dimensions 1120x760",
+      "status": "PASS"
+    },
+    {
+      "name": "default parameters omitted",
+      "status": "PASS"
+    },
+    {
+      "name": "temperature opt-in updates JSON",
+      "status": "PASS"
+    },
+    {
+      "name": "output limit opt-in updates JSON",
+      "status": "PASS"
+    },
+    {
+      "name": "system role precedes ordered history",
+      "status": "PASS"
+    },
+    {
+      "name": "stream toggle and reset restore defaults without sending",
+      "status": "PASS"
+    },
+    {
+      "name": "single-turn model disables unsupported fields and drops prior request history",
+      "status": "PASS"
+    },
+    {
+      "name": "simulation send reaches waiting and locks model",
+      "status": "PASS"
+    },
+    {
+      "name": "stop terminates local simulation and restores model",
+      "status": "PASS"
+    },
+    {
+      "name": "stream/error/blocked states remain explicit",
+      "status": "PASS"
+    },
+    {
+      "name": "new conversation confirmation clears only design data",
+      "status": "PASS"
+    },
+    {
+      "name": "apps search and state filter operate on sample rows",
+      "status": "PASS"
+    },
+    {
+      "name": "existing top-level pages and preferences all render",
+      "status": "PASS"
+    },
+    {
+      "name": "three existing window sizes preserve content and composer",
+      "status": "PASS"
+    },
+    {
+      "name": "narrow inspector opens and Escape returns focus",
+      "status": "PASS"
+    },
+    {
+      "name": "dark and opaque fallback preserve navigation and send",
+      "status": "PASS"
+    },
+    {
+      "name": "reduced motion and increased contrast have fallback styles",
+      "status": "PASS"
+    },
+    {
+      "name": "message content rendered as text, never HTML",
+      "status": "PASS"
+    },
+    {
+      "name": "no script errors, no outbound API, no message storage",
+      "status": "PASS"
+    }
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18417/prototype.html"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18417/prototype.html"
+    }
+  ]
+}

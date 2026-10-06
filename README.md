@@ -14,3 +14,5 @@ pnpm dev
 ```
 
 Run `bash scripts/verify.sh` for the local checks. The [product alignment plan](docs/LOCALMUX_PRODUCT_ALIGNMENT_PLAN_2026-09-28.md) describes the incremental work; [AGENTS.md](AGENTS.md) gives task-specific checks.
+
+The [capability negotiation design](docs/architecture/CAPABILITY_NEGOTIATION_DESIGN.md) is a review draft for generic API/Adapter improvements; the [2026-10-06 model audit](docs/architecture/CAPABILITY_AUDIT_2026-10-06.md) separates current Gateway limits, public runtime features, and model metadata for all 55 connected model IDs. These documents do not claim that the proposed changes are implemented or live-verified.
