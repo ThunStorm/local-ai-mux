@@ -228,6 +228,26 @@ pub async fn insert_api_key_with_policy(
     Ok(())
 }
 
+/// Explicitly change an active key's access while preserving its ID and hash.
+pub async fn update_api_key_access(
+    pool: &SqlitePool,
+    id: &str,
+    scopes: &[String],
+    policy: &localmux_security::KeyRestrictions,
+) -> anyhow::Result<()> {
+    if !policy.valid() {
+        anyhow::bail!("invalid API key policy");
+    }
+    let profile = serde_json::to_value(policy.execution_profile)?;
+    let result = sqlx::query("UPDATE api_keys SET scopes = ?, allowed_routes = ?, allowed_connections = ?, execution_profile = ?, rate_limit_per_minute = ? WHERE id = ? AND revoked_at IS NULL")
+        .bind(serde_json::to_string(scopes)?).bind(serde_json::to_string(&policy.allowed_routes)?).bind(serde_json::to_string(&policy.allowed_connections)?)
+        .bind(profile.as_str().ok_or_else(|| anyhow::anyhow!("invalid execution profile"))?).bind(i64::from(policy.rate_limit_per_minute)).bind(id).execute(pool).await?;
+    if result.rows_affected() != 1 {
+        anyhow::bail!("active API key not found");
+    }
+    Ok(())
+}
+
 pub async fn active_api_key(pool: &SqlitePool, hash: &str) -> anyhow::Result<Option<ApiKeyRecord>> {
     use sqlx::Row;
     let row =
@@ -332,6 +352,8 @@ pub async fn replace_default_api_key(
     let mut transaction = pool.begin().await?;
     sqlx::query("INSERT INTO settings (key, value) VALUES ('default_api_key_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
         .bind(new_id).execute(&mut *transaction).await?;
+    sqlx::query("INSERT INTO settings (key, value) VALUES ('default_api_key_store_version', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .execute(&mut *transaction).await?;
     if let Some(old_id) = old_id {
         sqlx::query("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ?")
             .bind(old_id)

@@ -1,4 +1,5 @@
 use localmux_adapter_sdk::Adapter;
+mod default_key;
 mod native_material;
 mod playground;
 use localmux_router::RoutePolicy;
@@ -26,7 +27,7 @@ struct GatewayControl {
     state: localmux_gateway::GatewayState,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     mimocode: Mutex<Option<MimoCodeSession>>,
-    default_key_lock: Mutex<()>,
+    default_key: default_key::DefaultKey,
     close_to_tray: AtomicBool,
     playground: playground::Control,
 }
@@ -41,14 +42,21 @@ struct MimoCodeSession {
 const MIMO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
 const MIMO_SECRET_REF: &str = "provider.mimo";
 const MIMO_CONNECTION_REF: &str = "session-credential:mimo";
-const DEFAULT_KEY_SETTING: &str = "default_api_key_id";
 static SESSION_SECRETS: LazyLock<MemorySecretStore> = LazyLock::new(MemorySecretStore::default);
 
-fn default_key_store() -> &'static MemorySecretStore {
-    &SESSION_SECRETS
-}
-fn default_key_ref(id: &str) -> String {
-    format!("api.key.{id}")
+fn persistent_local_key_store(_data_dir: &Path) -> Box<dyn SecretStore> {
+    #[cfg(unix)]
+    {
+        Box::new(localmux_secrets::LocalFileSecretStore::new(
+            _data_dir.join("local-api-keys"),
+        ))
+    }
+    #[cfg(not(unix))]
+    {
+        Box::new(localmux_secrets::OsSecretStore::new(
+            "app.localmux.local-api-keys",
+        ))
+    }
 }
 
 fn mimo_store() -> &'static MemorySecretStore {
@@ -795,85 +803,13 @@ async fn gateway_status(control: tauri::State<'_, GatewayControl>) -> Result<boo
         .is_some_and(|task| !task.is_finished()))
 }
 
-async fn create_stored_default_key(
-    control: &GatewayControl,
-    old_id: Option<&str>,
-    read_only_agent: bool,
-) -> Result<(), String> {
-    let mut policy = localmux_security::KeyRestrictions::default();
-    let mut scopes = vec!["models:read", "chat:invoke", "responses:invoke"];
-    if read_only_agent {
-        policy.execution_profile = localmux_security::ExecutionProfile::ReadOnlyAgent;
-        scopes.push("agent:invoke");
-    }
-    let (id, key) = control
-        .state
-        .create_key_with_policy(&scopes, policy)
-        .await
-        .map_err(|error| error.to_string())?;
-    let reference = default_key_ref(&id);
-    let store = default_key_store();
-    if let Err(error) = store.put(&reference, &key) {
-        let _ = localmux_storage::revoke_api_key(&control.state.pool, &id).await;
-        return Err(error.to_string());
-    }
-    if let Err(error) =
-        localmux_storage::replace_default_api_key(&control.state.pool, &id, old_id).await
-    {
-        let _ = store.delete(&reference);
-        let _ = localmux_storage::revoke_api_key(&control.state.pool, &id).await;
-        return Err(error.to_string());
-    }
-    if let Some(old_id) = old_id {
-        if let Err(error) = store.delete(&default_key_ref(old_id)) {
-            tracing::warn!(%error, "revoked old API key remains in credential store");
-        }
-    }
-    Ok(())
-}
-
 async fn default_key_material(
     control: &GatewayControl,
 ) -> Result<Option<(String, String)>, String> {
-    let Some(id) = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
-        .await
-        .map_err(|error| error.to_string())?
-    else {
-        return Ok(None);
-    };
-    let Some(key) = default_key_store()
-        .get(&default_key_ref(&id))
-        .map_err(|error| error.to_string())?
-    else {
-        return Err("本机 API Key 凭据已丢失，请显式重建".into());
-    };
-    if !control
-        .state
-        .key_matches_id(&id, &key)
-        .await
-        .map_err(|error| error.to_string())?
-    {
-        return Err("本机 API Key 已失效，请显式重建".into());
-    }
-    Ok(Some((id, key)))
+    control.default_key.material().await
 }
-
 async fn ensure_default_api_key(control: &GatewayControl) -> Result<(), String> {
-    let _guard = control.default_key_lock.lock().await;
-    let old_id = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
-        .await
-        .map_err(|error| error.to_string())?;
-    if let Some(id) = &old_id {
-        if default_key_store()
-            .get(&default_key_ref(id))
-            .map_err(|error| error.to_string())?
-            .is_some()
-        {
-            default_key_material(control).await?;
-            return Ok(());
-        }
-    }
-    create_stored_default_key(control, old_id.as_deref(), false).await
+    control.default_key.ensure().await
 }
 
 #[tauri::command]
@@ -892,16 +828,7 @@ async fn default_api_key_status(
 async fn default_api_key_allows_agent(
     control: tauri::State<'_, GatewayControl>,
 ) -> Result<bool, String> {
-    let id = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
-        .await
-        .map_err(|error| error.to_string())?;
-    let keys = localmux_storage::list_api_keys(&control.state.pool)
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(keys.iter().any(|key| {
-        Some(key.id.as_str()) == id.as_deref()
-            && key.scopes.iter().any(|scope| scope == "agent:invoke")
-    }))
+    control.default_key.allows_agent().await
 }
 
 #[tauri::command]
@@ -919,11 +846,15 @@ async fn reset_default_api_key(
     control: tauri::State<'_, GatewayControl>,
     read_only_agent: bool,
 ) -> Result<(), String> {
-    let _guard = control.default_key_lock.lock().await;
-    let old_id = localmux_storage::setting_string(&control.state.pool, DEFAULT_KEY_SETTING)
-        .await
-        .map_err(|error| error.to_string())?;
-    create_stored_default_key(&control, old_id.as_deref(), read_only_agent).await
+    control.default_key.reset(read_only_agent).await
+}
+
+#[tauri::command]
+async fn set_default_api_key_agent(
+    control: tauri::State<'_, GatewayControl>,
+    read_only_agent: bool,
+) -> Result<(), String> {
+    control.default_key.set_agent(read_only_agent).await
 }
 
 #[tauri::command]
@@ -1197,12 +1128,13 @@ pub fn run() {
                 state: state.clone(),
                 task: Mutex::new(None),
                 mimocode: Mutex::new(None),
-                default_key_lock: Mutex::new(()),
+                default_key: default_key::DefaultKey::new(state.clone(), persistent_local_key_store(&data_dir)),
                 playground: playground::Control::default(),
                 close_to_tray: AtomicBool::new(tauri::async_runtime::block_on(localmux_storage::setting_bool(&pool, "close_to_tray"))?.unwrap_or(false)),
             });
-            tauri::async_runtime::block_on(ensure_default_api_key(&app.state::<GatewayControl>()))
-                .map_err(std::io::Error::other)?;
+            if tauri::async_runtime::block_on(ensure_default_api_key(&app.state::<GatewayControl>())).is_err() {
+                tracing::warn!("local API key unavailable; explicit recovery required");
+            }
             let gateway_status = MenuItem::with_id(app, "gateway_status", "API：未启动", false, None::<&str>)?;
             let open = MenuItem::with_id(app, "open", "打开 LocalAiMux", true, None::<&str>)?;
             let toggle = MenuItem::with_id(app, "toggle", "启动 API", true, None::<&str>)?;
@@ -1284,6 +1216,7 @@ pub fn run() {
             default_api_key_allows_agent,
             reveal_default_api_key,
             reset_default_api_key,
+            set_default_api_key_agent,
             api_setup_models,
             playground::chat_models,
             playground::chat_send,

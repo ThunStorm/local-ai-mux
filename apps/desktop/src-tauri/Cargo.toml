@@ -52,3 +52,4 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 
 [dev-dependencies]
 axum = "0.8"
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }

@@ -58,20 +58,27 @@ export default function ApiQuickSetup({ running, baseUrl, connections, locale }:
     if (running) setModels(await invoke<string[]>("api_setup_models"));
   };
 
+  const saveAgentPermission = async (allowAgent: boolean) => {
+    await invoke("set_default_api_key_agent", { readOnlyAgent: allowAgent });
+    setReadOnlyAgent(allowAgent); setAgentAllowed(allowAgent);
+    if (running) setModels(await invoke<string[]>("api_setup_models"));
+    setMessage(zh ? "授权已保存，Key 保持不变；重启后继续有效。" : "Permission saved; the key stays unchanged across restarts.");
+  };
+
   return <div className="api-setup">
     <section className="config-row">
       <div className="config-label"><h2>Base URL</h2><p>{zh ? "本机 OpenAI 兼容地址" : "Local OpenAI-compatible address"}</p></div>
       <div className="config-control"><code className="config-value" title={baseUrl}>{baseUrl || "…"}</code><button disabled={!baseUrl || busy} onClick={() => run(() => copy(baseUrl))}>{zh ? "复制地址" : "Copy URL"}</button></div>
     </section>
     <section className="config-row">
-      <div className="config-label"><h2>LocalAiMux Key</h2><p>{zh ? "仅用于本机认证；每次重启会更新，需重新复制配置" : "Local authentication; it changes after each restart, so copy the config again"}</p></div>
+      <div className="config-label"><h2>LocalAiMux Key</h2><p>{zh ? "仅用于本机认证；重启和重新部署后保持不变" : "Local authentication; retained across restarts and deployments"}</p></div>
       <div className="config-control"><code className="config-value secret-value">{status === "READY" ? shownKey || "••••••••••••••••" : status === "MISSING" ? zh ? "凭据缺失，请在下方重建" : "Credential missing; replace below" : zh ? "启动 API 后创建" : "Created when API starts"}</code><button disabled={status !== "READY" || busy} onClick={() => run(async () => setShownKey(shownKey ? "" : await currentKey()))}>{shownKey ? zh ? "隐藏" : "Hide" : zh ? "显示" : "Show"}</button><button disabled={status !== "READY" || busy} onClick={() => run(async () => copy(await currentKey()))}>{zh ? "复制 Key" : "Copy key"}</button></div>
     </section>
     <section className="config-row">
       <div className="config-label"><h2>{zh ? "模型" : "Model"}</h2><p>{zh ? "当前 Key 可调用的官方报告型号" : "Reported models callable by this key"}</p></div>
       <div className="config-control"><select className="config-value" aria-label={zh ? "模型" : "Model"} value={selected} disabled={!running || models.length === 0} onChange={event => { setModel(event.target.value); localStorage.setItem("localmux.selectedModel", event.target.value); }}><option value="">{running ? zh ? "请选择模型" : "Choose a model" : zh ? "启动服务后查看可用模型" : "Start API to view models"}</option>{models.map(id => <option key={id} value={id}>{id}</option>)}</select><button disabled={!running || busy} onClick={() => run(async () => setModels(await invoke<string[]>("api_setup_models")))}>{zh ? "刷新" : "Refresh"}</button></div>
       <p className="config-hint">{!running ? zh ? "服务未启动，模型暂不可用。" : "The API is stopped; models are unavailable." : models.length === 0 ? agentConnected && !agentAllowed ? zh ? "当前 Key 不允许 Agent；授权只读调用后才会显示已连接的 Agent 模型。" : "This key cannot call agents; allow read-only calls to see agent models." : zh ? "暂无可调用模型；请在应用与连接页刷新连接模型。" : "No callable model. Refresh the connection catalog in Apps & connections." : selected ? verified.includes(selected) ? zh ? "此模型已在本次运行中通过真实短请求。" : "This model passed a real short request in this run." : zh ? "模型已报告，尚未实测。" : "Reported model; not yet tested." : zh ? "选择一个真实模型以生成配置。" : "Choose a reported model to build a configuration."}</p>
-      {running && models.length === 0 && agentConnected && !agentAllowed && status === "READY" && <button className="text-action" disabled={busy} onClick={() => run(() => replaceKey(true))}>{zh ? "允许只读 Agent 并重建 Key（旧 Key 会失效）" : "Allow read-only agents and replace key (old key expires)"}</button>}
+      {running && models.length === 0 && agentConnected && !agentAllowed && status === "READY" && <button className="text-action" disabled={busy} onClick={() => run(() => saveAgentPermission(true))}>{zh ? "允许只读 Agent（Key 保持不变）" : "Allow read-only agents (keep the same key)"}</button>}
       {running && selected && <button className="text-action" disabled={busy} onClick={() => run(async () => { const elapsed = await invoke<number>("verify_model", { model: selected }); setVerified(current => [...new Set([...current, selected])]); setMessage(zh ? `验证成功 · ${elapsed} 毫秒` : `Verified · ${elapsed} ms`); })}>{zh ? "测试此模型（会调用上游，可能消耗额度）" : "Test this model (calls upstream; may use quota)"}</button>}
     </section>
     <section className="examples-section">
@@ -79,7 +86,7 @@ export default function ApiQuickSetup({ running, baseUrl, connections, locale }:
       <div className="example-tabs" role="group" aria-label={zh ? "示例语言" : "Example language"}>{examples.map(kind => <button key={kind} aria-pressed={exampleKind === kind} className={exampleKind === kind ? "active" : ""} onClick={() => setExampleKind(kind)}>{kind === "json" ? "JSON" : kind === "curl" ? "cURL" : kind === "python" ? "Python" : "TypeScript"}</button>)}</div>
       <pre className="example-code"><code>{example(exampleKind, "YOUR_LOCALAIMUX_KEY")}</code></pre>
     </section>
-    <details className="inline-disclosure"><summary>{zh ? "本机 Key 权限与重建" : "Local key permissions and replacement"}</summary><div className="disclosure-body"><p>{zh ? "重建会撤销旧 Key。允许只读 Agent 后，上游运行时仍管理自身工具权限。" : "Replacing revokes the old key. The upstream runtime still controls its tool permissions."}</p><label><input type="checkbox" checked={readOnlyAgent} onChange={event => setReadOnlyAgent(event.target.checked)} />{zh ? "明确允许只读 Agent 调用" : "Allow read-only agent calls"}</label><button disabled={busy} onClick={() => run(() => replaceKey(readOnlyAgent))}>{zh ? "重建本机 Key 并撤销旧 Key" : "Replace local key and revoke old key"}</button></div></details>
+    <details className="inline-disclosure"><summary>{zh ? "本机 Key 权限与重建" : "Local key permissions and replacement"}</summary><div className="disclosure-body"><p>{zh ? "授权保存后跨重启保留，保存授权不改变 Key；只有主动重建才撤销旧 Key。上游运行时仍管理自身工具权限。" : "Permissions persist across restarts without changing the key; explicit replacement revokes the old key. The upstream runtime still controls its tools."}</p><label><input type="checkbox" checked={readOnlyAgent} onChange={event => setReadOnlyAgent(event.target.checked)} />{zh ? "明确允许只读 Agent 调用" : "Allow read-only agent calls"}</label><button disabled={busy || status !== "READY"} onClick={() => run(() => saveAgentPermission(readOnlyAgent))}>{zh ? "保存授权（Key 不变）" : "Save permissions (keep key)"}</button><button disabled={busy} onClick={() => run(() => replaceKey(readOnlyAgent))}>{zh ? "重建本机 Key 并撤销旧 Key" : "Replace local key and revoke old key"}</button></div></details>
     {message && <p className="inline-message" role="status">{message}</p>}
   </div>;
 }

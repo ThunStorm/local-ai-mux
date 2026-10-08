@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Retain the development default API key and explicit Agent permission across restarts/deployments; migrate the old memory key once, then fail explicitly on missing/corrupt/revoked credentials instead of silently rotating.
+- Persist only the local API credential in an owner-only Unix file (0700 directory / 0600 file); keep SQLite hashes/permissions and third-party credential behavior unchanged. Windows OS-store integration remains pending native acceptance.
+- Separate permission saving from explicit key replacement, preserve key identity and route/connection/rate limits, and document the formal-product access-control TODO list.
+
 - Implement layered capability provenance with schema-versioned, Key-filtered catalogs; preserve all 55 audited IDs and Codex per-model modalities/effort enums without issuing inference requests.
 - Support leading system instructions through public CLI/App Server controls, separate Codex developer instructions and declared reasoning effort, explicit standard output-limit conflicts and response-format diagnostics. Keep unverified token limits and JSON guarantees unavailable.
 - Carry typed stream/response metadata, reported usage snapshots and actual upstream identity; use null for unknown usage/finish rather than zero/stop. Preserve truncation/refusal/cancellation across Chat, Responses and playground history; isolate runtime configuration and keep explicit Agent authorization.
@@ -32,7 +36,7 @@
 - Map unauthenticated Qoder catalog requests to login guidance; identify WorkBuddy's incomplete bundled CLI instead of offering a connection that cannot use the documented commands.
 - Detect the installed MiMo Code CLI separately from its desktop app; add saved-connection model refresh and a direct read-only Agent Key authorization action.
 - Connect MiMo Code through its documented loopback capability API on an explicit user action, restrict its short-lived token to reported MiMo models, and revoke it on disconnect; make HTTP Provider catalogs routable after validation.
-- Keep development-build default and MiMo API secrets only in process memory; rotate the default key on launch and avoid automatic Keychain access or password prompts.
+- Keep MiMo API secrets process-only; the earlier memory-only default-key policy is superseded by the stable development-key behavior above.
 
 ### Product alignment
 

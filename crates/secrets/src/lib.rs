@@ -1,10 +1,21 @@
+#[cfg(unix)]
+mod local_file;
+#[cfg(unix)]
+pub use local_file::LocalFileSecretStore;
+fn valid_reference(reference: &str) -> bool {
+    !reference.is_empty()
+        && reference.len() <= 128
+        && reference
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
 #[derive(Debug, thiserror::Error)]
 pub enum SecretError {
     #[error("credential store unavailable")]
     Unavailable,
 }
 
-/// Opaque references are safe in SQLite; values belong only in the OS store.
+/// SQLite contains references/hashes only; each store defines its secret persistence boundary.
 pub trait SecretStore: Send + Sync {
     fn put(&self, reference: &str, value: &str) -> Result<(), SecretError>;
     fn get(&self, reference: &str) -> Result<Option<String>, SecretError>;
@@ -54,12 +65,7 @@ impl OsSecretStore {
         }
     }
     fn entry(&self, reference: &str) -> Result<keyring::Entry, SecretError> {
-        if reference.is_empty()
-            || reference.len() > 128
-            || !reference
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-        {
+        if !valid_reference(reference) {
             return Err(SecretError::Unavailable);
         }
         keyring::Entry::new(&self.service, reference).map_err(|_| SecretError::Unavailable)

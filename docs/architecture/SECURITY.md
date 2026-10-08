@@ -1,9 +1,31 @@
 # 安全边界（Phase 8）
 
-Gateway 只绑定 `127.0.0.1:8317`。`/api/health` 只提供存活状态；模型目录、Chat 和 Responses 分别要求 `models:read`、`chat:invoke`、`responses:invoke`。API Key 只在创建时显示一次，SQLite 仅保存 SHA-256 哈希与权限元数据；撤销后后续请求立即失效。每个 Key 可限制模型/虚拟路由、连接和每分钟 1–600 次请求。默认 `INFERENCE_ONLY` 阻止 Agent Adapter；用户在 GUI 显式选 `READ_ONLY_AGENT` 时才授予 `agent:invoke`。`WORKSPACE_WRITE` 和 `FULL_AGENT` 暂不接受，避免声称尚不能执行的沙箱约束。
+Gateway 只绑定 `127.0.0.1:8317`。`/api/health` 只提供存活状态；模型目录、Chat 和 Responses 分别要求 `models:read`、`chat:invoke`、`responses:invoke`。独立客户端 API Key 只在创建时显示一次；默认本机 Key 可由用户主动显示/复制，SQLite 仅保存 SHA-256 哈希与权限元数据；撤销后后续请求立即失效。每个 Key 可限制模型/虚拟路由、连接和每分钟 1–600 次请求。默认 `INFERENCE_ONLY` 阻止 Agent Adapter；用户在 GUI 显式选 `READ_ONLY_AGENT` 时才授予 `agent:invoke`。`WORKSPACE_WRITE` 和 `FULL_AGENT` 暂不接受，避免声称尚不能执行的沙箱约束。
 
 当前 Codex/Qoder/CodeBuddy Adapter 向官方运行时请求只读或禁用工具模式。LocalMux 无法证明所有上游版本都严格遵守；GUI 明示由上游运行时管理工具权限。虚拟路由命中目标后仍再次核验 Key 的路由、连接、执行权限。Responses 会话绑定创建时的 Key ID，其他 Key 即使持有响应 ID 也不能续接；升级前无法确定归属的旧会话仍可在 GUI 查看，但不可通过 API 续接。请求体最大 1 MiB，失败返回结构化错误，不把提示词、回答或原始上游响应写入 SQLite/日志。
 
 `localmux-secrets` 使用系统凭据库：macOS Keychain、Windows Credential Manager。SQLite `credential_refs` 只容纳引用元数据，不保存密钥值。该接口尚未连接 Phase 5 的 GLM/Ark 真实 Provider；需要用户在 GUI 显式添加且先完成资费与真实接口验收。日志输出层统一遮盖 Authorization、Bearer、LocalMux Key、常见 token/cookie/password 字段和邮箱；诊断导出辅助函数额外遮盖用户目录路径。Tauri 生产内容安全策略限制资源来源。
 
 验证边界：离线安全测试覆盖默认拒绝 Agent、显式权限、路由/连接限制、限流、超大请求和撤销；系统凭据库的真实写入/读取及 Windows 原生运行仍需在对应平台验收。
+
+
+## 研发版稳定本机 Key（2026-10-08）
+
+为频繁开发部署保留默认本机 API Key 和已经显式确认的权限。macOS/Unix 的默认 Key 放在应用数据目录 `local-api-keys/api.key.<id>`；目录 0700、文件 0600，以临时文件同步并原子替换。不调用 macOS Keychain，因此本轮不引入部署时的钥匙串弹窗；这是同一本机用户可读的开发凭据文件，并非静态加密。该 Store 只允许 `api.key.` 引用，不用于第三方 Provider 凭据。Windows 接入已有 OS SecretStore 的独立服务名，真实原生读写待 Windows 实机验证。SQLite 仍仅保存哈希、Key ID、权限和存储版本，不存明文 Key；凭据不进入日志/诊断/仓库。
+
+旧内存 Key 首次升级可换一次，`default_api_key_store_version=1` 与默认 Key 切换/旧 Key 撤销在同一个数据库事务提交；已确认的只读 Agent 权限保留，未授权仍默认拒绝。此后正常启动、API 启停及重新部署只读取并校验原 Key，不轮换、不清除权限。权限修改通过独立“保存授权（Key 不变）”动作保留 Key ID/哈希及模型/连接/限流约束；只有用户主动重建才轮换并撤销旧 Key。第三方凭据与独立客户端 Key 不因默认 Key 重建被撤销。
+
+版本已迁移后，凭据缺失、损坏、权限过宽、路径为符号链接、Key 已撤销或存储版本不识别均明确失败，不偷偷创建新 Key。应用仍可打开恢复页面，API 启动会给出诊断，用户可显式重建。凭据写入失败不切换默认 ID/不撤销原 Key；跨文件/数据库的崩溃恢复与多实例并发属于下方产品 TODO。数据库备份不含明文凭据，完整恢复需另行安全备份对应凭据目录。
+
+## 正式产品权限控制 TODO
+
+- [ ] 区分内置试用/桌面 Key 与外部客户端长期 Key，允许按客户端命名、识别、独立撤销，不共享一个万能 Key。
+- [ ] 保持首次显式授权、最小权限默认、按模型/连接/路由限权与每 Key 限流；已确认的权限跨重启保留，与凭据轮换独立。
+- [ ] 将开发凭据文件迁到系统安全存储/静态加密方案，验证 macOS 签名升级后的 Keychain 访问体验及 Windows Credential Manager；迁移不隐式扩大权限或轮换客户端 Key，成功后清理旧明文副本。
+- [ ] 提供可选到期策略、用户主动轮换、泄露应急撤销与必要的有限兼容窗口；禁止把应用重启作为默认轮换事件。
+- [ ] 明确权限收紧、撤销、轮换对进行中请求和 Responses 会话的作用；按 Key 身份隔离会话，验证新请求及时拒绝旧权限。
+- [ ] 保存不含密钥/Prompt/正文的权限变更、轮换、撤销审计；诊断导出与备份清单排除明文凭据。
+- [ ] 实现单实例/跨进程 Key 生命周期锁、文件与数据库的崩溃一致性和孤立凭据清理，覆盖中途退出、磁盘满、并发重建、备份恢复。
+- [ ] 默认桌面凭据异常时，评估让已有独立客户端 Key 继续服务，同时明确桌面恢复入口，避免把所有接入绑定到一个默认 Key。
+- [ ] 对每个公开 Agent 运行时独立验证实际只读/禁用工具约束；不把 Key 的 READ_ONLY_AGENT 标签当作上游严格无工具的保证。
+- [ ] 完成 macOS/Windows 实机重启、升级、权限保存、轮换/撤销、两种官方 SDK 与外部客户端的互操作验收。
