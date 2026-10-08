@@ -277,6 +277,7 @@ async fn execute(
     let response = client
         .post(format!("{base}/chat/completions"))
         .bearer_auth(key)
+        .header("x-localmux-source", "playground")
         .json(request)
         .send()
         .await

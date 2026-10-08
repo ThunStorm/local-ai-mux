@@ -1,3 +1,4 @@
+mod recording;
 mod responses;
 
 use axum::{
@@ -35,13 +36,18 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 use uuid::Uuid;
 
 pub const DEFAULT_PORT: u16 = 8317;
-pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+const AGENT_QUEUE_TIMEOUT: Duration = Duration::from_secs(30);
+const AGENT_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_BODY: usize = 1024 * 1024;
 type CatalogCache = Arc<Mutex<HashMap<String, (Instant, Vec<ModelDescriptor>)>>>;
+type AgentLane = Arc<Mutex<Option<tokio::time::Instant>>>;
+type AgentPermit = OwnedMutexGuard<Option<tokio::time::Instant>>;
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -53,6 +59,7 @@ pub struct GatewayState {
     catalog: CatalogCache,
     limiter: Arc<KeyRateLimiter>,
     active_runs: Arc<AtomicUsize>,
+    agent_lanes: Arc<Mutex<HashMap<String, AgentLane>>>,
 }
 struct ActiveRun(Arc<AtomicUsize>);
 impl Drop for ActiveRun {
@@ -71,6 +78,7 @@ impl GatewayState {
             catalog: Arc::new(Mutex::new(HashMap::new())),
             limiter: Arc::new(KeyRateLimiter::default()),
             active_runs: Arc::new(AtomicUsize::new(0)),
+            agent_lanes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     pub fn mock(pool: SqlitePool) -> Self {
@@ -91,6 +99,43 @@ impl GatewayState {
     fn begin_run(&self) -> ActiveRun {
         self.active_runs.fetch_add(1, Ordering::Relaxed);
         ActiveRun(self.active_runs.clone())
+    }
+    async fn acquire_agent(
+        &self,
+        adapter: &dyn Adapter,
+    ) -> Result<Option<AgentPermit>, Box<Response>> {
+        if adapter.kind() != AdapterKind::Agent {
+            return Ok(None);
+        }
+        // Current adapters expose one account per adapter; instance IDs must replace this key when multi-account support ships.
+        let lane = self
+            .agent_lanes
+            .lock()
+            .await
+            .entry(adapter.id().to_owned())
+            .or_default()
+            .clone();
+        let mut permit = tokio::time::timeout(AGENT_QUEUE_TIMEOUT, lane.lock_owned())
+            .await
+            .map_err(|_| {
+                let mut response = error(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "LMX_RATE_LIMITED",
+                    "Local CLI connection is busy; retry later",
+                );
+                response
+                    .headers_mut()
+                    .insert("Retry-After", "5".parse().unwrap());
+                Box::new(response)
+            })?;
+        if let Some(last) = *permit {
+            tokio::time::sleep_until(last + AGENT_REQUEST_INTERVAL).await;
+        }
+        if let Some(response) = connection_cooldown(self, adapter.id()) {
+            return Err(Box::new(response));
+        }
+        *permit = Some(tokio::time::Instant::now());
+        Ok(Some(permit))
     }
     pub async fn invalidate_catalog(&self, id: &str) {
         self.catalog.lock().await.remove(id);
@@ -260,6 +305,33 @@ impl GatewayState {
             .is_some_and(|record| record.id == id))
     }
     pub async fn verify_reported_model(&self, model: &str) -> Result<(), AdapterError> {
+        let mut guard = recording::CallGuard::start(
+            &self.pool,
+            None,
+            "model_test",
+            "model_test",
+            model,
+            false,
+            true,
+        )
+        .await
+        .map_err(|_| AdapterError::ProcessFailed)?;
+        let call = guard.call();
+        let result = self.verify_reported_model_inner(model, call.clone()).await;
+        if let Err(kind) = &result {
+            call.fail(adapter_error_details(kind).1);
+        }
+        guard
+            .persist()
+            .await
+            .map_err(|_| AdapterError::ProcessFailed)?;
+        result
+    }
+    async fn verify_reported_model_inner(
+        &self,
+        model: &str,
+        call: recording::Call,
+    ) -> Result<(), AdapterError> {
         let candidate = self
             .available_candidates()
             .await
@@ -274,10 +346,24 @@ impl GatewayState {
             .find(|adapter| adapter.id() == candidate.connection_id)
             .cloned()
             .ok_or(AdapterError::ModelUnavailable)?;
+        call.target(
+            model,
+            adapter.id(),
+            &format!("test_{}", Uuid::new_v4().simple()),
+            None,
+        );
         let _run = self.begin_run();
+        let _permit = self
+            .acquire_agent(adapter.as_ref())
+            .await
+            .map_err(|_| AdapterError::RateLimited)?;
         let prompt = "Reply with OK.";
-        let response = adapter
-            .invoke(NormalizedRequest {
+        call.request(&serde_json::json!([{"role":"user","content":prompt}]))
+            .await
+            .map_err(|_| AdapterError::ProcessFailed)?;
+        let response = tokio::time::timeout(
+            REQUEST_TIMEOUT,
+            adapter.invoke(NormalizedRequest {
                 model: model.into(),
                 prompt: prompt.into(),
                 messages: vec![NormalizedMessage {
@@ -285,11 +371,17 @@ impl GatewayState {
                     content: prompt.into(),
                 }],
                 parameters: Default::default(),
-            })
-            .await?;
+            }),
+        )
+        .await
+        .map_err(|_| AdapterError::Timeout)??;
+        call.answer(&response.text)
+            .await
+            .map_err(|_| AdapterError::ProcessFailed)?;
         if response.text.trim().is_empty() {
             return Err(AdapterError::ProcessFailed);
         }
+        call.result(&response.metadata);
         Ok(())
     }
 }
@@ -308,7 +400,7 @@ pub fn router(state: GatewayState) -> Router {
         .route(
             "/api/health",
             get(|State(state): State<GatewayState>| async move {
-                Json(serde_json::json!({"status":"ok","active_tasks":state.active_tasks()}))
+                Json(serde_json::json!({"status":"ok","active_tasks":state.active_tasks(),"execution_limits":{"request_timeout_seconds":REQUEST_TIMEOUT.as_secs(),"stream_idle_timeout_seconds":STREAM_IDLE_TIMEOUT.as_secs(),"agent_max_concurrency":1,"agent_queue_timeout_seconds":AGENT_QUEUE_TIMEOUT.as_secs(),"agent_request_interval_seconds":AGENT_REQUEST_INTERVAL.as_secs()}}))
             }),
         )
         .route("/v1/models", get(models))
@@ -505,7 +597,7 @@ fn breaker_error(state: &GatewayState, adapter_id: &str, kind: &AdapterError) {
     let duration = match kind {
         AdapterError::RateLimited => Some(Duration::from_secs(60)),
         AdapterError::QuotaExhausted => Some(Duration::from_secs(300)),
-        AdapterError::ProviderUnavailable | AdapterError::ProcessFailed => {
+        AdapterError::ProviderUnavailable | AdapterError::ProcessFailed | AdapterError::Timeout => {
             Some(Duration::from_secs(30))
         }
         _ => None,
@@ -529,6 +621,46 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             )
         }
     };
+    let source = if headers
+        .get("x-localmux-source")
+        .is_some_and(|v| v == "playground")
+    {
+        "playground"
+    } else {
+        "api"
+    };
+    let guard = match recording::CallGuard::start(
+        &state.pool,
+        Some(&key.id),
+        source,
+        "chat",
+        &request.model,
+        request.stream,
+        request.store.unwrap_or(true),
+    )
+    .await
+    {
+        Ok(guard) => guard,
+        Err(_) => return recording::persistence_error(),
+    };
+    let call = guard.call();
+    if call
+        .request(&serde_json::to_value(&request.messages).unwrap_or_default())
+        .await
+        .is_err()
+    {
+        call.fail("LMX_INTERNAL_ERROR");
+        return guard.response(recording::persistence_error()).await;
+    }
+    let response = chat_inner(state, key, request, call).await;
+    guard.response(response).await
+}
+async fn chat_inner(
+    state: GatewayState,
+    key: localmux_storage::ApiKeyRecord,
+    request: ChatRequest,
+    call: recording::Call,
+) -> Response {
     if request.stream_options.is_some() && !request.stream {
         return protocol_error(
             "LMX_INVALID_REQUEST",
@@ -637,6 +769,7 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
         );
     }
     let adapter_id = adapter.id().to_owned();
+    call.target(&actual_model, &adapter_id, "", None);
     let parameters = localmux_adapter_sdk::ChatParameters {
         temperature: request.temperature,
         top_p: request.top_p,
@@ -757,8 +890,14 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
         .as_ref()
         .is_some_and(|options| options.include_usage);
     let run = state.begin_run();
+    let permit = match state.acquire_agent(adapter.as_ref()).await {
+        Ok(permit) => permit,
+        Err(response) => return *response,
+    };
+    let deadline = tokio::time::Instant::now() + REQUEST_TIMEOUT;
     let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
     let created = now();
+    call.target(&actual_model, &adapter_id, &id, None);
     if request.stream {
         let mut provider_stream =
             match tokio::time::timeout(Duration::from_secs(30), adapter.invoke_events(normalized))
@@ -784,6 +923,7 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
         let route_state = state.clone();
         let events = async_stream::stream! {
             let _run = run;
+            let _permit = permit;
             let role = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]});
             yield Ok::<Event, Infallible>(Event::default().data(role.to_string()));
             let mut failure = None;
@@ -791,16 +931,18 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             let mut completed = false;
             let mut output_bytes = 0usize;
             loop {
-                match tokio::time::timeout(STREAM_IDLE_TIMEOUT, provider_stream.next()).await {
+                let next_deadline = (tokio::time::Instant::now() + STREAM_IDLE_TIMEOUT).min(deadline);
+                match tokio::time::timeout_at(next_deadline, provider_stream.next()).await {
                     Ok(Some(Ok(StreamEvent::Delta(delta)))) if !completed => {
                         output_bytes += delta.len();
                         if output_bytes > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
+                        if call.answer(&delta).await.is_err() { failure = Some("LMX_INTERNAL_ERROR"); break; }
                         let chunk = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"content":delta},"finish_reason":null}]});
                         yield Ok(Event::default().data(chunk.to_string()));
                     },
-                    Ok(Some(Ok(StreamEvent::Usage(usage)))) if !completed => { metadata.usage = Some(usage); },
+                    Ok(Some(Ok(StreamEvent::Usage(usage)))) if !completed => { metadata.usage = Some(usage); call.metadata(&metadata); },
                     Ok(Some(Ok(StreamEvent::Completed(mut reported)))) if !completed => {
-                        reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported; completed = true;
+                        reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported; call.metadata(&metadata); completed = true;
                     },
                     Ok(Some(Ok(_))) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Ok(None) => { if completed { route_state.breaker.success(&adapter_id); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
@@ -809,8 +951,10 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
                 }
             }
             if let Some(code) = failure {
+                call.fail(code);
                 yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"public_interface","retryable":false,"request_id":id}}).to_string()));
             } else {
+                call.result(&metadata);
                 let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":metadata.finish_reason.openai()}],"localmux":wire_metadata(&metadata, &id, &model, normalization.as_deref())});
                 yield Ok(Event::default().data(last.to_string()));
                 if include_usage {
@@ -824,8 +968,7 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             .keep_alive(KeepAlive::default())
             .into_response();
     }
-    let response = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, adapter.invoke(normalized)).await
-    {
+    let response = match tokio::time::timeout_at(deadline, adapter.invoke(normalized)).await {
         Ok(Ok(response)) => {
             state.breaker.success(&adapter_id);
             response
@@ -842,6 +985,10 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
             )
         }
     };
+    if call.answer(&response.text).await.is_err() {
+        return recording::persistence_error();
+    }
+    call.result(&response.metadata);
     Json(ChatResponse {
         localmux: wire_metadata(
             &response.metadata,
@@ -924,6 +1071,11 @@ fn adapter_error(kind: AdapterError) -> Response {
 }
 fn adapter_error_details(kind: &AdapterError) -> (StatusCode, &'static str, &'static str) {
     match kind {
+        AdapterError::Timeout => (
+            StatusCode::GATEWAY_TIMEOUT,
+            "LMX_PROCESS_TIMEOUT",
+            "Upstream idle timed out",
+        ),
         AdapterError::ContextLimit => (
             StatusCode::BAD_REQUEST,
             "LMX_CONTEXT_LIMIT",

@@ -1,5 +1,39 @@
 # 交接记录
 
+2026-10-09 文档收敛与远程交付基线：交付目标为 `origin/codex/dev`，本次提交包含会话记录扩展（0011）、默认关闭且持久的完整正文开关（0012）、同高筛选栏/正文详情、凭据脱敏与清理回归，以及同一已验证工作树中的 CLI 600 秒总期/180 秒空闲、并发 1/间隔 5 秒/队列 30 秒修复。当前权威行为见 [会话模型](architecture/SESSION_MODEL.md)，旧计划的“仅元数据/不保存正文”和各历史条目的“未提交”描述代表对应日期的状态；CHANGELOG 已改为默认元数据、正文显式 opt-in 的统一表述。
+
+交付验证沿用最终源码已通过的 `bash scripts/verify.sh`（Rust 105 passed / 0 failed / 2 ignored，前端 7 passed）、全仓 Clippy、官方 Python/TypeScript SDK Mock smoke、浏览器/原生验收，具体证据见紧随的正文交付条目。本轮收敛只改文档，没有新增代码、Provider 连接或推理；提交前检查 diff、文档链接、凭据及目标分支，不提交数据库、凭据、临时测试截图/脚本或构建产物，不发布 Release。Windows 原生、实际 ARM64 与真实上游未验收项继续保留，不以远程代码提交替代实际验收。
+
+
+2026-10-09 完整对话录制交付：按用户要求在“会话记录”增加默认关闭、跨重启保留的“记录对话内容”开关和按需正文详情。开启保存新调用完整 Chat messages（含指令/历史角色）或 Responses input，以及实际收到的模型回答；失败、截断、过滤、取消保留部分文字。关闭以事务/代次条件停止正在进行的正文写入，已有内容保留，重新开启不续录旧调用；store:false 优先禁止本次保存，原元数据、授权/费用/续接策略不变。新增 0012 的独立正文表和设置表；清理调用记录级联清理正文，旧记录不回填。凭据在录制副本脱敏，覆盖跨分片、结构化/camelCase 字段，邮件/路径/Unicode/换行保留；正文不写日志，React 纯文本查看，不执行 HTML。当前完整契约见[会话模型](architecture/SESSION_MODEL.md#对话正文录制2026-10-09)，DATABASE、OBSERVABILITY、SECURITY、API/Streaming、UX_SPEC、原扩展计划范围修订及 CHANGELOG 已同步。
+
+验证：最终 `bash scripts/verify.sh` Rust 105 passed / 0 failed / 2 ignored，前端 7 passed / 0 failed，格式/类型/构建通过；全仓 Clippy `--all-targets -- -D warnings` 通过。新增回归覆盖两接口流/非流的完整及部分内容、store:false、系统/历史消息、短测试、流中途关闭/再开启、调用开始后才开启不补录、分片凭据与取消保留、长 Unicode 不截断、文件重开保留及级联清理。官方 Python 3.24.0 / TypeScript 7.23.0 的隔离 Mock 模型/Chat/Responses/流/能力/unknown 元数据/store:false smoke 通过。Browser 插件未配置，Playwright+Edge 合成 IPC 验证开关读写/重载、完整文本与 HTML 逃逸、关闭后详情状态刷新、旧正文空态、设置/正文失败重读，以及原筛选分页清理和 960/800/760/1120 宽度/浅深布局，控制台无错误；截图 `/tmp/localmux-content-recording-960.png`、`/tmp/localmux-content-recording-760.png`、`/tmp/localmux-content-recording-dark.png`。原生 WebView 控制台未读取。
+
+部署：预检 active_tasks=0 / integrity=ok；备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-dialogue-20261009-005349.db`。最终脚本从 codex/dev / 248f675 + 当前树构建、正常退出并安装重启 `~/Applications/LocalAiMux.app`；安装/release/build-info SHA-256 均为 `8b6db9c95071c770958a4845b6eaf0ca6e02dbd19124b0ff9129c8a868aafcc2`。资源 index-B5uL1VFg.js / index-CRktyDZi.css，schema=12 / integrity=ok，默认 Key 完整行/权限、4 个连接及升级前 19 个调用 ID 均保留。原生在 API 停止状态验证开关从 OFF→ON 落库，正常 Quit/重开仍 ON，再关闭落库；零新正文、无生成，旧详情提示未录正文。最后开关恢复 OFF、API 恢复运行、任务 0，应用留在会话记录页。部署后仅文档收敛，无代码修改。
+
+边界：不回填旧记录、不抓取上游未返回的内部推理/工具过程或私有历史；正文 SQLite 无新增静态加密，备份可能含已录正文，关闭不删除历史/备份。全程保存指 Gateway 接受的可见文字及原有接口限制，未另行缩短正文；每个 delta 用完整脱敏快照确保跨片凭据安全，长输出性能优化仍按实测决定。无 Provider 新连接/登录或真实生成，真实上游及 Windows 原生仍待显式验收；当前 Mac 主程序为 x86_64。既有工作树改动保留，本轮未提交/推送、不发布 Release。
+
+
+2026-10-08 会话记录筛选栏美化：按用户截图修复原生 select 高度与输入/按钮不一致及换行错位。控件统一 36px/8px 圆角，标签与字段成组对齐；下拉框显式受控 appearance 和非交互箭头，保留标准 select 键盘语义。筛选置于现有 inset/line 表面，“查询”为主操作、刷新为次操作、清理低强调；窄窗口操作整组下一排，说明降为次级文字。原会话映射刷新移入对应折叠区，避免与调用记录刷新混淆。改动仅在 CallRecords/App/CSS，相关 UX_SPEC、MACOS_VISUAL_SPEC 和 CHANGELOG Unreleased 已同步，既有工作树改动保留。
+
+验证：`pnpm typecheck && pnpm test` 通过（7 passed / 0 failed），前端生产构建通过。Browser 插件未配置，沿用现有 Playwright + Edge 的本机 `http://127.0.0.1:1421/` 合成 IPC fixture，验证 960×680、800×680、760×560、1120×680 下六个控件均 36px、字段/按钮各组顶部一致及无水平溢出，浅/深稳定外观与筛选、分页、清理、异步筛选回归通过，控制台无错误。截图 `/tmp/localmux-records-polished-960.png`、`/tmp/localmux-records-polished-760.png`、`/tmp/localmux-records-polished-dark.png`；原生 WebView 控制台未读取。
+
+本机：部署前 active_tasks=0；`bash scripts/deploy-local-macos.sh` 从当前 codex/dev / 248f675 + 工作树构建安装、正常退出并重启。安装/release/build-info SHA-256 均为 `d227564619cfa4798593f5f98aafa140c0df869be101a530c66d96a195e2b0a8`，最终资源 index-BgfPF4SE.js / index-CNJzHLfs.css。原生截图确认同高对齐，来源下拉键盘筛选与恢复正常；App 留在会话记录页，API 已恢复运行。DB integrity=ok、版本 11、4 个连接和现有 4 条调用记录保留，本轮没有发起生成或清理用户记录。Windows 原生仍未验收，本轮未提交/推送；部署后仅文档收敛，无代码修改。
+
+
+2026-10-08 调用记录扩展交付：详细[计划与验收](CALL_RECORDS_EXPANSION_PLAN_2026-10-08.md)的工作包 1–5 已完成。新增 `0011` / `call_records`，覆盖 Chat、Responses（流/非流）、桌面试对话和显式模型短测试，保留完成/失败/超时/取消/截断/过滤/中断元数据，升级遗留运行中记录恢复为中断；不保存正文、请求参数、客户端 metadata、凭据或上游原文。`store:false` 关闭本次记录及 Responses 映射/路由事件。记录与 native resume 分开，失败不冒充可续接成功，旧会话映射与路由事件入口保留。已知终态在成功帧之前落库，写入失败不发送成功完成帧，补写不能改回成功；误把 Key 填进型号时仅保存无效标记。界面含来源/状态/型号过滤、每页 50 条稳定游标、详情、同 Responses 会话各轮查询，以及确认后清理终态记录；运行中不可删除，清理不破坏续接映射，删除期间切换筛选不会被旧条件覆盖。
+
+验证：最终 `bash scripts/verify.sh` Rust 97 passed / 0 failed / 2 ignored（显式路径目录测试），前端 7 passed / 0 failed，格式/类型/构建通过；全仓 Clippy `--all-targets -- -D warnings` 通过。新增 7 个 Gateway 集成测试、1 个记录层故障单元测试和 2 个存储测试；原 Responses 链额外核对按会话关联及 store=false 不写路由事件。官方 Python OpenAI 3.24.0 / TypeScript 7.23.0 的隔离 Mock 目录、Chat/Responses、流、能力/unknown 元数据和 store=false smoke 通过。Browser 插件未配置，已有 Playwright + Microsoft Edge headless 以合成 IPC 数据验证 56 条分页、过滤/详情/确认删除、删除期间切换筛选、运行中保护、读失败及 960×680/760×560/深色稳定外观，控制台无错误；证据在 `/tmp/localmux-call-records-ui-960.png`、`/tmp/localmux-call-records-ui-760.png`、`/tmp/localmux-call-records-ui-dark.png`。原生 WebView 控制台未读取，browser fixture 不代替真实 Provider 验收。
+
+部署与原生：部署前 active_tasks=0 / integrity=ok，备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-call-records-20261008-181240.db`。最终从 codex/dev / 248f675 + 当前树安装重启 `~/Applications/LocalAiMux.app`，安装与 release/build-info SHA-256 均为 `7e0b80a2c0fdf4e388d49f68d6848fefe67e2aa74512527e47064ad23ce6568f`；最终 JS/CSS 资源与源码一致，部署后只有文档收敛，无代码修改。DB 版本 11、integrity=ok、4 个连接及默认 Key ID/哈希/完整权限与备份一致，API 恢复运行且活动任务 0。安装版以认证后生成前即拒绝的两条合成请求验证 Chat/Responses 失败记录，原生 AX/截图核对来源筛选、型号空态、详情、删除确认/取消；仅按本轮精确 ID 清理临时记录，用户历史/续接映射保留。实际主程序 x86_64，dmg 名称不作 ARM64 原生证据。
+
+边界：没有 Provider 新连接/登录或真实生成；正常生成及故障矩阵由离线 Adapter/SDK 覆盖，远端取消/计费和 Windows 原生仍未验证。正文保存开关、导出、自动保留期不在本轮，旧 Chat 不回填。现有未提交的超时/队列/Adapter 修复保留并共同验证，不扩大其真实验收结论。本轮未提交/推送，不发布 Release；实现与相关架构/API/UX 文档及 CHANGELOG Unreleased 已同步。
+
+
+2026-10-08 22:22 订阅 CLI 可靠性核对（至简联调工作包）：Gateway/CLI 超时与 Agent 并发保护已与并行调用记录包一起安装。只读 `/api/health` 报告总期 600、空闲 180 秒、并发 1、启动间隔 5、锁等待 30 秒，active_tasks=0；至简既有生产 Keychain 凭据 GET `/v1/models` 200、codebuddy/hy3 可见，无推理。最终安装/release SHA 为 `58575bf15a7ec24154d439bb76f172066dcdcadb35515884aec9dcf53981e39e`，Key ID/哈希/scopes/限制/角色/RPM 摘要与 18:08 逻辑备份一致，DB integrity=ok、FK=0；schema=11 属于独立调用记录包，本包未新增 Schema。原生 API 页运行中，本轮未测试模型、复制 Key 或扩权。
+
+本包独立 Rust 87/前端 7 与 Clippy 通过；叠加记录包后的 95 项（2 ignored）、前端 7、Clippy 和两个官方 SDK smoke 通过。Virtual-clock fixture 关闭记录保存，落库在独立真实时钟 fixture 验证；保护值与边界见 [Streaming](api/STREAMING.md#2026-10-08-cli-调用期限与并发修订)。至简 Profile 660 秒、GUARDED 并发 1/间隔 5、校对 300 秒/16 段/邻段 1、证据地图分包 5000 等 6 项参数已保存，旧 Job 快照和历史 Audit 不改；至简 277/19、无迁移重载 READY。真实厂商限额、完整视频、远端取消/计费未验收；未提交/推送。
+
 2026-10-08 开发版稳定 Key：按用户要求取消每次重启/部署轮换默认 Key 和清除只读 Agent 授权。用户明确允许舍弃旧 Key，本机旧内存 Key 在首次升级换一次；`default_api_key_store_version=1` 与默认 ID 切换/旧 Key 撤销原子提交，此后凭据缺失、损坏、已撤销或版本不识别均明确恢复，不自动生成新 Key。macOS/Unix 本机 Key 位于数据目录 `local-api-keys/api.key.<id>`（目录 0700、文件 0600、原子替换）；SQLite 只存哈希和权限，不调用 macOS Keychain。第三方/MiMo 的进程内凭据策略不变，独立客户端 Key 不随默认重建被撤销。保存只读授权已从重建 Key 分离，保留原 Key ID/哈希与路由/连接/限流约束；显式重建仍撤销旧 Key。[正式产品权限控制 TODO](architecture/SECURITY.md)已记录独立客户端 Key、安全存储迁移、首次授权/持久权限、可选到期/主动轮换、撤销/会话审计、崩溃/多实例/备份恢复与跨平台验收。
 
 验证：`bash scripts/verify.sh` 通过，Rust 83 passed / 0 failed / 2 ignored，前端 7 passed、格式/类型/构建通过；全仓 Clippy `--all-targets -- -D warnings` 通过。新增回归覆盖存储重开、授权跨重启/外部 HTTP 认证、限流与白名单保留、关闭授权不换 Key、一次性旧模式升级、显式重建/撤销、独立 Key 保留、缺失/损坏/写入失败不静默轮换、0700/0600、符号链接/越界引用/过大文件拒绝。首轮安全 fixture 因目录延迟创建而缺父目录，补齐 fixture 初始化后全部通过；不是用户数据故障。

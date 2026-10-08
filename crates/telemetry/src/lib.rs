@@ -18,6 +18,18 @@ fn patterns() -> &'static [Regex] {
     })
 }
 
+/// Dialogue capture preserves ordinary text (including email/path), but never recognized credentials.
+pub fn redact_credentials(message: &str) -> String {
+    static CREDENTIALS: OnceLock<Vec<Regex>> = OnceLock::new();
+    CREDENTIALS.get_or_init(|| [
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        r"\blmx_[A-Za-z0-9_-]*",
+        r"\bsk-[A-Za-z0-9._~+/=-]*",
+        r#"(?i)\b(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|cookie)\b["']?\s*[:=]\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s,;]+)"#,
+    ].into_iter().map(|pattern| Regex::new(pattern).expect("credential pattern")).collect())
+    .iter().fold(message.to_owned(), |text,pattern| pattern.replace_all(&text,"[REDACTED]").into_owned())
+}
+
 pub fn redact(message: &str) -> String {
     patterns().iter().fold(message.to_owned(), |text, pattern| {
         pattern.replace_all(&text, "[REDACTED]").into_owned()
@@ -79,5 +91,22 @@ mod tests {
         ] {
             assert!(!redacted.contains(secret), "{secret}");
         }
+    }
+}
+
+#[cfg(test)]
+mod credential_capture_tests {
+    #[test]
+    fn preserves_normal_dialogue_but_redacts_complete_and_unfinished_credentials() {
+        let text="user@example.com /Users/alice/notes 正常正文 sk-proj-abcdef lmx_short api_key=unsafe \"password\":\"two words\" Bearer opaque.jwt";
+        let safe = super::redact_credentials(text);
+        for secret in ["abcdef", "lmx_short", "unsafe", "two words", "opaque.jwt"] {
+            assert!(!safe.contains(secret));
+        }
+        assert!(safe.contains("user@example.com /Users/alice/notes 正常正文"));
+        assert!(
+            !super::redact_credentials("{\"api_key\":\"partial value").contains("partial value")
+        );
+        assert_eq!(super::redact_credentials("sk-"), "[REDACTED]");
     }
 }

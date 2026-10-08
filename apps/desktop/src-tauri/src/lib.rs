@@ -739,6 +739,52 @@ async fn quota_buckets(
 }
 
 #[tauri::command]
+async fn call_recording_get(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<localmux_storage::RecordingSetting, String> {
+    localmux_storage::recording_setting(&control.state.pool)
+        .await
+        .map_err(|_| "读取录制设置失败".into())
+}
+#[tauri::command]
+async fn call_recording_set(
+    control: tauri::State<'_, GatewayControl>,
+    enabled: bool,
+) -> Result<localmux_storage::RecordingSetting, String> {
+    localmux_storage::set_recording(&control.state.pool, enabled)
+        .await
+        .map_err(|_| "保存录制设置失败".into())
+}
+#[tauri::command]
+async fn call_record_content(
+    control: tauri::State<'_, GatewayControl>,
+    id: String,
+) -> Result<Option<localmux_storage::CallContent>, String> {
+    localmux_storage::call_content(&control.state.pool, &id)
+        .await
+        .map_err(|_| "读取对话内容失败".into())
+}
+
+#[tauri::command]
+async fn call_records_list(
+    control: tauri::State<'_, GatewayControl>,
+    filter: localmux_storage::CallFilter,
+) -> Result<Vec<localmux_storage::CallRecord>, String> {
+    localmux_storage::list_calls(&control.state.pool, &filter)
+        .await
+        .map_err(|_| "读取调用记录失败".into())
+}
+#[tauri::command]
+async fn call_records_delete(
+    control: tauri::State<'_, GatewayControl>,
+    id: Option<String>,
+) -> Result<u64, String> {
+    localmux_storage::delete_calls(&control.state.pool, id.as_deref())
+        .await
+        .map_err(|_| "清理调用记录失败".into())
+}
+
+#[tauri::command]
 async fn sessions_list(
     control: tauri::State<'_, GatewayControl>,
 ) -> Result<Vec<localmux_storage::ConversationState>, String> {
@@ -1196,6 +1242,11 @@ pub fn run() {
             routing_refresh,
             quota_snapshots,
             quota_buckets,
+            call_recording_get,
+            call_recording_set,
+            call_record_content,
+            call_records_list,
+            call_records_delete,
             sessions_list,
             session_events,
             gateway_start,

@@ -340,6 +340,8 @@ pub enum AdapterError {
     Refusal,
     #[error("provider request failed")]
     ProcessFailed,
+    #[error("provider request timed out")]
+    Timeout,
 }
 
 #[async_trait]

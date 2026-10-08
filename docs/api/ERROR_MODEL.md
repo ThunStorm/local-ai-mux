@@ -11,3 +11,6 @@ Gateway 返回 HTTP 状态与 OpenAI 风格 `{"error":{"message","type","code","
 2026-10-06：`LMX_PROVIDER_COOLDOWN`（503）表示同一连接已进入短期熔断，当前型号仍可能在目录中；Chat exact route 与 Responses 均保留这个区别，不误报 404 `LMX_MODEL_UNAVAILABLE`。用户稍后手动重试，无需删除连接或换模型。流式错误保留白名单鉴权/额度/限流/连接失败码；`LMX_PROCESS_TIMEOUT` 对应桌面的 `LMX_TIMEOUT`。厂商原文、HTTP 请求和认证资料不透传。
 
 2026-10-06 能力协商：配置类 400 的 error 新增 param、reason_code、limiting_layer、retryable=false 与安全 request_id。`LMX_UNSUPPORTED_PARAMETER` 保留兼容码，reason_code 区分 conflict/out_of_range/not_implemented/unknown_constraints/guarantee_unverified 等，不吞字段；`LMX_UNSUPPORTED_MESSAGES` 指出 messages 与角色/历史映射层。能力限制不能归因到底层模型。`LMX_CONTEXT_LIMIT` 与 `LMX_REFUSAL` 独立报告上下文边界和拒绝，不触发暂时连接熔断。桌面 `LMX_OUTPUT_TRUNCATED` 表示收到 length，部分文字不进入完整历史。
+
+
+2026-10-08：Gateway 总期与 CLI 空闲超时统一返回 504 LMX_PROCESS_TIMEOUT；连接队列等待超过 30 秒返回 429 LMX_RATE_LIMITED、Retry-After=5，表示本机忙，不等于厂商额度耗尽。CLI result 的 is_error/subtype=error 在内存识别 quota/credit、rate limit、authentication 后返回白名单类别，不保存原始错误结果。LMX_QUOTA_EXHAUSTED、LMX_AUTH_REQUIRED 和 LMX_RATE_LIMITED 保持区别。所有错误释放占用，未完成/超时不保存成功响应映射；仅关闭本机进程句柄不证明上游停止计费。

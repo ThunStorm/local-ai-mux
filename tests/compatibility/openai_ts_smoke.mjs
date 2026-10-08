@@ -36,3 +36,9 @@ try {
   assert.equal(error.error.retryable, false);
 }
 console.log("TypeScript SDK: capability negotiation, unknown metadata and usage stream passed");
+
+const privateChat = await client.chat.completions.create({model:"mock/echo",messages:[{role:"user",content:"ts-no-store"}],store:false});
+assert.equal(privateChat.choices[0].message.content,"ts-no-store");
+const privateResponse = await client.responses.create({model:"mock/echo",input:"ts-response-no-store",store:false});
+assert.equal(privateResponse.output_text,"ts-response-no-store");
+console.log("TypeScript SDK: Chat and Responses store:false accepted");

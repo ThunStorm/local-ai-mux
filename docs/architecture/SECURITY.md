@@ -2,7 +2,7 @@
 
 Gateway 只绑定 `127.0.0.1:8317`。`/api/health` 只提供存活状态；模型目录、Chat 和 Responses 分别要求 `models:read`、`chat:invoke`、`responses:invoke`。独立客户端 API Key 只在创建时显示一次；默认本机 Key 可由用户主动显示/复制，SQLite 仅保存 SHA-256 哈希与权限元数据；撤销后后续请求立即失效。每个 Key 可限制模型/虚拟路由、连接和每分钟 1–600 次请求。默认 `INFERENCE_ONLY` 阻止 Agent Adapter；用户在 GUI 显式选 `READ_ONLY_AGENT` 时才授予 `agent:invoke`。`WORKSPACE_WRITE` 和 `FULL_AGENT` 暂不接受，避免声称尚不能执行的沙箱约束。
 
-当前 Codex/Qoder/CodeBuddy Adapter 向官方运行时请求只读或禁用工具模式。LocalMux 无法证明所有上游版本都严格遵守；GUI 明示由上游运行时管理工具权限。虚拟路由命中目标后仍再次核验 Key 的路由、连接、执行权限。Responses 会话绑定创建时的 Key ID，其他 Key 即使持有响应 ID 也不能续接；升级前无法确定归属的旧会话仍可在 GUI 查看，但不可通过 API 续接。请求体最大 1 MiB，失败返回结构化错误，不把提示词、回答或原始上游响应写入 SQLite/日志。
+当前 Codex/Qoder/CodeBuddy Adapter 向官方运行时请求只读或禁用工具模式。LocalMux 无法证明所有上游版本都严格遵守；GUI 明示由上游运行时管理工具权限。虚拟路由命中目标后仍再次核验 Key 的路由、连接、执行权限。Responses 会话绑定创建时的 Key ID，其他 Key 即使持有响应 ID 也不能续接；升级前无法确定归属的旧会话仍可在 GUI 查看，但不可通过 API 续接。请求体最大 1 MiB，失败返回结构化错误，默认不把提示词/回答写入 SQLite；用户显式开启正文录制时按下述边界保存。日志仍不写正文或原始上游错误。
 
 `localmux-secrets` 使用系统凭据库：macOS Keychain、Windows Credential Manager。SQLite `credential_refs` 只容纳引用元数据，不保存密钥值。该接口尚未连接 Phase 5 的 GLM/Ark 真实 Provider；需要用户在 GUI 显式添加且先完成资费与真实接口验收。日志输出层统一遮盖 Authorization、Bearer、LocalMux Key、常见 token/cookie/password 字段和邮箱；诊断导出辅助函数额外遮盖用户目录路径。Tauri 生产内容安全策略限制资源来源。
 
@@ -29,3 +29,10 @@ Gateway 只绑定 `127.0.0.1:8317`。`/api/health` 只提供存活状态；模�
 - [ ] 默认桌面凭据异常时，评估让已有独立客户端 Key 继续服务，同时明确桌面恢复入口，避免把所有接入绑定到一个默认 Key。
 - [ ] 对每个公开 Agent 运行时独立验证实际只读/禁用工具约束；不把 Key 的 READ_ONLY_AGENT 标签当作上游严格无工具的保证。
 - [ ] 完成 macOS/Windows 实机重启、升级、权限保存、轮换/撤销、两种官方 SDK 与外部客户端的互操作验收。
+
+
+## 显式正文录制（2026-10-09）
+
+正文开关初始关闭、跨重启保留，仅桌面本机 IPC 可读写；不新增外部历史读取接口，不扩展 API Key/Agent 授权。关闭与录制代次更新同事务，正在录制的输出在关闭后不能继续写入，再开启不续录旧调用。已录正文保持可读，用户清理调用记录时正文按外键一并删除，续接映射不删除。
+
+认证头/凭据服务不被采集；常见 Key、Bearer 与命名凭据字段仅在录制副本中脱敏，覆盖跨 delta 及结构化字段，普通邮箱/路径保留以满足完整对话要求。实际 wire 内容不改，正文与原始上游错误仍不写日志。详情以纯文本显示，不能执行模型返回 HTML。SQLite 没有新增静态加密，逻辑备份可能包含已录正文；关闭不删除既有内容或备份，不声称逻辑删除等同介质擦除。旧 Prompt/正文不回填，不扫描第三方私有历史。

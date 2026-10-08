@@ -37,6 +37,8 @@ async fn context(
     owner_key_id: &str,
     requested: &str,
     previous_id: Option<&str>,
+    store: bool,
+    call: &super::recording::Call,
 ) -> Result<Context, Box<Response>> {
     let adapters = state.adapters.read().await.clone();
     if let Some(previous_id) = previous_id {
@@ -57,6 +59,12 @@ async fn context(
                         "Previous response not found or not latest",
                     ))
                 })?;
+        call.target(
+            &mapping.model_id,
+            &mapping.adapter_id,
+            "",
+            Some(&mapping.id),
+        );
         if !mapping.resume_supported || mapping.provider_session_id.is_none() {
             return Err(Box::new(error(
                 StatusCode::CONFLICT,
@@ -66,14 +74,16 @@ async fn context(
         }
         let virtual_route = matches!(requested, "free" | "cheap" | "balanced" | "best");
         if !virtual_route && requested != mapping.model_id {
-            let _ = localmux_storage::record_run_event(
-                &state.pool,
-                &mapping.id,
-                "ROUTE_CHANGE_REJECTED",
-                &json!({"requested_model":requested}).to_string(),
-                now(),
-            )
-            .await;
+            if store {
+                let _ = localmux_storage::record_run_event(
+                    &state.pool,
+                    &mapping.id,
+                    "ROUTE_CHANGE_REJECTED",
+                    &json!({"requested_model":requested}).to_string(),
+                    now(),
+                )
+                .await;
+            }
             return Err(Box::new(error(
                 StatusCode::CONFLICT,
                 "LMX_SESSION_RESUME_FAILED",
@@ -127,14 +137,16 @@ async fn context(
             &state.breaker,
             Instant::now(),
         ) {
-            let _ = localmux_storage::record_run_event(
-                &state.pool,
-                &mapping.id,
-                "STICKY_ROUTE_UNAVAILABLE",
-                &json!({"reason":reason.to_string()}).to_string(),
-                now(),
-            )
-            .await;
+            if store {
+                let _ = localmux_storage::record_run_event(
+                    &state.pool,
+                    &mapping.id,
+                    "STICKY_ROUTE_UNAVAILABLE",
+                    &json!({"reason":reason.to_string()}).to_string(),
+                    now(),
+                )
+                .await;
+            }
             return Err(Box::new(if reason == RouteError::FreePoolExhausted {
                 error(
                     StatusCode::TOO_MANY_REQUESTS,
@@ -270,6 +282,39 @@ pub async fn create(
             )
         }
     };
+    let guard = match super::recording::CallGuard::start(
+        &state.pool,
+        Some(&key.id),
+        "api",
+        "responses",
+        &request.model,
+        request.stream,
+        request.store.unwrap_or(true),
+    )
+    .await
+    {
+        Ok(guard) => guard,
+        Err(_) => return super::recording::persistence_error(),
+    };
+    let call = guard.call();
+    let messages = if request.input.is_string() {
+        json!([{"role":"user","content":request.input}])
+    } else {
+        request.input.clone()
+    };
+    if call.request(&messages).await.is_err() {
+        call.fail("LMX_INTERNAL_ERROR");
+        return guard.response(super::recording::persistence_error()).await;
+    }
+    let response = create_inner(state, key, request, call).await;
+    guard.response(response).await
+}
+async fn create_inner(
+    state: GatewayState,
+    key: localmux_storage::ApiKeyRecord,
+    request: localmux_api_types::ResponsesRequest,
+    call: super::recording::Call,
+) -> Response {
     let Some(prompt) = response_input_text(&request.input) else {
         return error(
             StatusCode::BAD_REQUEST,
@@ -301,6 +346,8 @@ pub async fn create(
         &key.id,
         &request.model,
         request.previous_response_id.as_deref(),
+        request.store.unwrap_or(true),
+        &call,
     )
     .await
     {
@@ -324,6 +371,12 @@ pub async fn create(
     let response_id = format!("resp_{}", Uuid::new_v4().simple());
     let message_id = format!("msg_{}", Uuid::new_v4().simple());
     let created = now();
+    call.target(
+        &context.model,
+        context.adapter.id(),
+        &response_id,
+        Some(&context.conversation_id),
+    );
     let normalized = NormalizedRequest {
         model: context.model.clone(),
         prompt,
@@ -331,6 +384,11 @@ pub async fn create(
         parameters: Default::default(),
     };
     let run = state.begin_run();
+    let permit = match state.acquire_agent(context.adapter.as_ref()).await {
+        Ok(permit) => permit,
+        Err(response) => return *response,
+    };
+    let deadline = tokio::time::Instant::now() + super::REQUEST_TIMEOUT;
     if request.stream {
         let session = match tokio::time::timeout(
             Duration::from_secs(30),
@@ -367,6 +425,7 @@ pub async fn create(
         let store = request.store.unwrap_or(true);
         let events = async_stream::stream! {
             let _run = run;
+            let _permit = permit;
             let mut provider_stream = session.stream;
             let mut text = String::new();
             let mut sequence = 0_u64;
@@ -380,7 +439,8 @@ pub async fn create(
             let mut result = ResponseMetadata::default();
             let mut completed = false;
             loop {
-                let next = match tokio::time::timeout(super::STREAM_IDLE_TIMEOUT, provider_stream.next()).await {
+                let next_deadline = (tokio::time::Instant::now() + super::STREAM_IDLE_TIMEOUT).min(deadline);
+                let next = match tokio::time::timeout_at(next_deadline, provider_stream.next()).await {
                     Ok(Some(next)) => next,
                     Ok(None) => { if completed { stream_state.breaker.success(context.adapter.id()); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
                     Err(_) => {
@@ -391,12 +451,13 @@ pub async fn create(
                 match next {
                     Ok(StreamEvent::Delta(delta)) if !completed => {
                         if text.len() + delta.len() > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
+                        if call.answer(&delta).await.is_err() { failure = Some("LMX_INTERNAL_ERROR"); break; }
                         text.push_str(&delta);
                         yield Ok(event("response.output_text.delta", json!({"type":"response.output_text.delta","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"delta":delta})));
                         sequence += 1;
                     },
-                    Ok(StreamEvent::Usage(usage)) if !completed => { result.usage = Some(usage); },
-                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported.usage = reported.usage.or(result.usage.take()); result = reported; completed = true; },
+                    Ok(StreamEvent::Usage(usage)) if !completed => { result.usage = Some(usage); call.metadata(&result); },
+                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported.usage = reported.usage.or(result.usage.take()); result = reported; call.metadata(&result); completed = true; },
                     Ok(_) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Err(kind) => {
                         super::breaker_error(&stream_state, context.adapter.id(), &kind);
@@ -405,14 +466,17 @@ pub async fn create(
                 }
             }
             if let Some(code) = failure {
+                call.fail(code);
                 yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed"}}})));
                 return;
             }
             let native_id = session.provider_session_id.lock().await.clone().or(context.provider_session_id);
             if store && !matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) && localmux_storage::save_response_mapping(&pool, localmux_storage::NewResponseMapping { owner_key_id: &owner_key_id, conversation_id: &context.conversation_id, response_id: &response_id, model_id: &context.model, adapter_id: context.adapter.id(), provider_session_id: native_id.as_deref(), previous_response_id: previous.as_deref(), created_at: created }).await.is_err() {
+                call.fail("LMX_INTERNAL_ERROR");
                 yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":"LMX_INTERNAL_ERROR","message":"Session persistence failed"}}})));
                 return;
             }
+            call.result(&result);
             yield Ok(event("response.output_text.done", json!({"type":"response.output_text.done","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"text":text})));
             sequence += 1;
             yield Ok(event("response.content_part.done", json!({"type":"response.content_part.done","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":text,"annotations":[]}})));
@@ -427,10 +491,23 @@ pub async fn create(
             .keep_alive(axum::response::sse::KeepAlive::default())
             .into_response();
     }
-    let result = if let Some(native_id) = context.provider_session_id.as_deref() {
-        context.adapter.resume(normalized, native_id).await
-    } else {
-        context.adapter.invoke(normalized).await
+    let result = match tokio::time::timeout_at(deadline, async {
+        if let Some(native_id) = context.provider_session_id.as_deref() {
+            context.adapter.resume(normalized, native_id).await
+        } else {
+            context.adapter.invoke(normalized).await
+        }
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            return error(
+                StatusCode::GATEWAY_TIMEOUT,
+                "LMX_PROCESS_TIMEOUT",
+                "Upstream timed out",
+            )
+        }
     };
     let result = match result {
         Ok(result) => result,
@@ -477,6 +554,10 @@ pub async fn create(
             "Session persistence failed",
         );
     }
+    if call.answer(&result.text).await.is_err() {
+        return super::recording::persistence_error();
+    }
+    call.result(&result.metadata);
     Json(response_object(
         &response_id,
         &message_id,

@@ -8,6 +8,8 @@ use tokio::{
     time::timeout,
 };
 
+pub const CLI_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
+
 pub async fn raw_output(executable: &Path, args: &[&str]) -> Result<Vec<u8>, AdapterError> {
     if !executable.is_file() {
         return Err(AdapterError::ProviderUnavailable);
@@ -102,8 +104,8 @@ pub async fn stream_json_command(
         let mut metadata = None;
         loop {
             let mut line = String::new();
-            let size = timeout(Duration::from_secs(120), reader.read_line(&mut line)).await
-                .map_err(|_| AdapterError::ProcessFailed)?.map_err(|_| AdapterError::ProcessFailed)?;
+            let size = timeout(CLI_IDLE_TIMEOUT, reader.read_line(&mut line)).await
+                .map_err(|_| AdapterError::Timeout)?.map_err(|_| AdapterError::ProcessFailed)?;
             if size == 0 { break; }
             if size > 1024 * 1024 { Err(AdapterError::ProcessFailed)?; }
             let value: Value = serde_json::from_str(&line).map_err(|_| AdapterError::ProcessFailed)?;
@@ -111,7 +113,10 @@ pub async fn stream_json_command(
             if let Some(error) = value.get("error") { Err(map_error(error))?; }
             if let Some(delta) = parse_delta(&value) { saw_delta = true; yield StreamEvent::Delta(delta); }
             if value["type"] == "result" {
-                if value["is_error"] == true || value["subtype"].as_str().is_some_and(|s| s.starts_with("error")) { Err(AdapterError::ProcessFailed)?; }
+                if value["is_error"] == true || value["subtype"].as_str().is_some_and(|s| s.starts_with("error")) {
+                    // Classify in memory only; never persist the result text or credentials.
+                    Err(classify_cli_failure(value.to_string().as_bytes(), b""))?;
+                }
                 if metadata.is_some() { Err(AdapterError::ProcessFailed)?; }
                 // CLI result alone does not certify model stop, per-request usage or actual route.
                 metadata = Some(ResponseMetadata { finish_reason: FinishReason::Unknown, ..Default::default() });
@@ -141,5 +146,28 @@ mod tests {
             classify_cli_failure(b"", b"Node.js is unavailable"),
             AdapterError::ProcessFailed
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cli_result_errors_preserve_quota_and_auth_categories() {
+        for (message, quota) in [("quota exhausted", true), ("not logged in", false)] {
+            let script = format!("cat >/dev/null; printf '%s\\n' '{{\"type\":\"result\",\"is_error\":true,\"result\":\"{message}\"}}'");
+            let (stream, _) = stream_json_command(
+                Command::new("/bin/sh"),
+                &["-c".into(), script],
+                "fixture".into(),
+                |_| None,
+                |_| AdapterError::ProcessFailed,
+            )
+            .await
+            .unwrap();
+            let error = crate::collect_events(stream).await.unwrap_err();
+            assert!(if quota {
+                matches!(error, AdapterError::QuotaExhausted)
+            } else {
+                matches!(error, AdapterError::AuthRequired)
+            });
+        }
     }
 }

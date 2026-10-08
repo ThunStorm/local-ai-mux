@@ -2857,6 +2857,7 @@ dependencies = [
  "localmux-router",
  "localmux-security",
  "localmux-storage",
+ "localmux-telemetry",
  "serde_json",
  "sha2 0.10.9",
  "sqlx",

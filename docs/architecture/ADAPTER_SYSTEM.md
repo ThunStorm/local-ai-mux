@@ -19,3 +19,6 @@ HTTP 目录可带公开模型元数据；MiMo Code 在用户显式连接的 loop
 Codex 子进程在 macOS 缺少显式代理环境时遵从现有系统固定 HTTP(S) 代理，loopback 绕过，凭据不读取/落库；不自动更改代理设置。官方错误通知及时结束当前调用并保留安全分类。Gateway 与桌面流式等待共享 120 秒空闲界限、心跳不算回答；熔断连接与不存在的模型分别报告。
 
 2026-10-06 能力协商实施：NormalizedResponse 增加 ResponseMetadata，新增 EventStream（delta/usage/completed）与 SessionEventStream，旧 NormalizedStream 文字接口仅为兼容包装。Codex/Qoder/CN/CodeBuddy/HTTP 的新链路统一到 typed 流；非流式从同一事件收集元数据。未知 usage/finish/actual_model 不补 0/stop/猜测型号，供应商累积计数不加到请求快照。ChatParameters 支持 max_completion_tokens、reasoning_effort、标准 response_format，但只有已映射且满足精确约束的值可用。CLI 映射前置 system，Codex 独立 base/developer 字段；未支持角色/格式/上限明确拒绝。能力来源与实施边界见[实施验收](CAPABILITY_NEGOTIATION_IMPLEMENTATION_2026-10-06.md)，旧 single_turn 模板不得作为底层模型不支持的证明。Tools/config 约束不改变 AdapterKind 或 Key 的 Agent 授权。
+
+
+2026-10-08：CLI/Codex 等待输出事件的空闲上限为 180 秒；Gateway 另有 600 秒总期与 Agent 连接串行，取代早期 Gateway 120 秒整体等待。AdapterError::Timeout 与 ProcessFailed 分开，映射 LMX_PROCESS_TIMEOUT；错误 result 的额度/鉴权分类只在内存进行，不透传 stdout/stderr。取消 drop 终止本机句柄，但远端取消/消费仍待真实验收。连接锁覆盖 Chat、Responses、模型验证；详情见[Streaming](../api/STREAMING.md#2026-10-08-cli-调用期限与并发修订)。

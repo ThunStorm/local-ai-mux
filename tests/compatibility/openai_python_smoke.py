@@ -29,3 +29,9 @@ except BadRequestError as error:
     assert error.body["param"] == "max_completion_tokens"
     assert error.body["retryable"] is False
 print("Python SDK: capability negotiation, unknown metadata and usage stream passed")
+
+private_chat = client.chat.completions.create(model="mock/echo", messages=[{"role":"user","content":"python-no-store"}], store=False)
+assert private_chat.choices[0].message.content == "python-no-store"
+private_response = client.responses.create(model="mock/echo", input="python-response-no-store", store=False)
+assert private_response.output_text == "python-response-no-store"
+print("Python SDK: Chat and Responses store:false accepted")

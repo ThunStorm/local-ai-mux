@@ -1,3 +1,6 @@
+mod calls;
+pub use calls::*;
+
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use std::path::Path;
 
@@ -14,6 +17,7 @@ pub async fn open(path: &Path) -> anyhow::Result<SqlitePool> {
         .create_if_missing(true);
     let pool = SqlitePool::connect_with(options).await?;
     MIGRATIONS.run(&pool).await?;
+    recover_interrupted_calls(&pool).await?;
     Ok(pool)
 }
 pub async fn open_memory() -> anyhow::Result<SqlitePool> {
@@ -59,7 +63,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("latest migration");
-        assert_eq!(version, 10);
+        assert_eq!(version, 12);
         pool.close().await;
         std::fs::remove_file(&path).ok();
     }

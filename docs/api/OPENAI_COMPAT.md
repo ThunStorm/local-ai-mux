@@ -13,3 +13,10 @@ Chat 非流式与 SSE 同享可信元数据：未知 usage=null、finish_reason=
 详细实现、测试及未验收边界见[能力协商实施](../architecture/CAPABILITY_NEGOTIATION_IMPLEMENTATION_2026-10-06.md)。
 
 Phase 6 增加动态虚拟模型 `free`、`cheap`、`balanced`、`best`。只有存在符合条件的目标时才在模型列表展示。`free` 耗尽时返回 429 `LMX_FREE_POOL_EXHAUSTED`；真实 Adapter 目前均为费用 UNKNOWN，因此不会被自动放入免费池。`/v1/responses` 在 Phase 7 实现。
+
+
+2026-10-08：GET /api/health 新增只读 execution_limits，报告 request_timeout_seconds=600、stream_idle_timeout_seconds=180、agent_max_concurrency=1、agent_queue_timeout_seconds=30、agent_request_interval_seconds=5；不含凭据或套餐余额。非流式与流式期限、连接并发及边界见[Streaming](STREAMING.md#2026-10-08-cli-调用期限与并发修订)。这些是本机保护参数，不是厂商限额，也不代表 600 秒桌面 playground 交互。
+
+2026-10-08 调用记录：Chat 增加标准可选 `store:boolean`，与 Responses 一样默认 true；false 不持久化本次成功/失败调用元数据或 Responses 映射/路由事件，不改变上游请求/路由策略。认证成功且请求符合 schema 后创建元数据记录，后续参数/能力/目标权限拒绝也记录；认证或 schema 失败不登记。元数据保存与 native resume 独立，Chat 不创建可续接 Responses，默认不存正文；2026-10-09 起可由桌面开关显式录制。桌面 IPC 查询记录；本轮不新增外部 HTTP 历史查询或跨 Key 历史访问 API。详情见[扩展计划](../CALL_RECORDS_EXPANSION_PLAN_2026-10-08.md)。
+
+2026-10-09：正文录制是本机全局 opt-in，默认关闭、跨重启保存。开启时保存新调用完整 messages/input 和 Gateway 收到的输出，包含部分失败结果；关闭后不继续记录在途输出，再开启不续录旧调用。标准 store:false 仍优先禁止一切本次保存，开关不发起上游请求、不改变 wire payload 或 native resume。没有新增外部历史/正文查询和开关 HTTP API。详情见[正文录制](../architecture/SESSION_MODEL.md#对话正文录制2026-10-09)。

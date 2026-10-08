@@ -9,3 +9,18 @@ Chat 使用 `text/event-stream`，发送角色、文本增量、已报告 finish
 2026-10-06：Chat/Responses SSE 在等待上游时每 15 秒发送注释心跳；心跳只表示连接仍在，不计作文字/完成。桌面总期限仍为 120 秒，启动 Adapter 流的门限仍为 30 秒；Gateway 流空闲超时报告 `LMX_PROCESS_TIMEOUT`，桌面映射为 `LMX_TIMEOUT`。Codex 的官方 `error` 通知/failed turn 会保留安全错误类别并结束本次子进程，不忽略连接错误等待隐式重试。上游失败的鉴权/额度/限流类别不统一吞成普通失败。
 
 2026-10-06：生产 Adapter 改用 typed delta/usage/completed；EOF 缺少 completed 时失败，旧文字流 Adapter 兼容包装的 completed 只能证明接收完成，finish 仍 unknown。usage 快照替换而不相加；Chat 仅在标准 include_usage 选项启用时发送最终 usage 块，unknown=null。Responses 使用相同元数据，length/content_filter/cancelled 返回 incomplete，不保存为可续接的成功响应；不能发送 response.completed 掩盖截断。桌面识别 length/过滤/取消终态，保留部分文字而不纳入成功历史。协议错误、超时、截断、结束原因与 `[DONE]` 的传输终止分开。
+
+
+## 2026-10-08 CLI 调用期限与并发修订
+
+Gateway Chat/Responses 非流式、原生续接和 SSE 使用 600 秒总执行期限；Adapter 流启动仍 30 秒，首个/后续事件空闲上限改为 180 秒，连续增量不重置总期限。等待 CLI 连接锁最多 30 秒（另有最多 5 秒启动节流），执行期限从取到锁并完成节流后开始；目录/授权检查不纳入该期限。SDK CLI/Codex stdout 无事件等待也为 180 秒；没有输出的 CLI 超时报告 LMX_PROCESS_TIMEOUT，不冒充普通进程故障。SSE 心跳仍只代表传输连接，不证明模型进度。桌面 playground 保留原 120 秒客户端总期，因此本次 600 秒用于直接 Gateway 客户端，并不自动放宽桌面交互。
+
+同一 Agent Adapter 连接（当前一 Adapter 一账户）跨模型、客户端 Key、Chat/Responses 和显式模型验证共用并发 1、启动间隔 5 秒；锁等待超时返回 429 LMX_RATE_LIMITED 与 Retry-After=5，不启动上游，不触发供应商冷却。失败、超时、客户端断流和取消释放占用；等待中的请求计入 active_tasks，退出/部署门禁继续生效。独立 CLI/官方应用绕过 Mux，不能视作全账号锁；未来多账户实例须按真实连接 ID 分开。
+
+离线验收入口：crates/gateway/tests/stream_failures.rs 使用虚拟时钟证明 130 秒非流式可完成、601 秒总期失败、持续增量仍在总期收口、跨协议/模型/Key 队列和断流释放；不产生真实推理。远端取消/计费和真实厂商限额继续 UNKNOWN。
+
+2026-10-08 调用审计与流生命周期：记录 guard 跟随整个请求及 SSE Body，未开始消费/消费中被丢弃均可记 cancelled；typed usage/completed 直接更新元数据，协议无 completed 的 EOF 记 interrupted。上游 length/过滤/取消均保留其终态记录，但不创建成功 Responses 续接映射；本次已知完整结果在客户端关闭时保留原终态。补写为异步，进程异常退出前未落库的 in_progress 在下次启动恢复。`store:false` 完全绕过记录层，原协议帧与取消/队列行为不变。记录不保证远端取消或停止计费，也不修改当前工作树的时间预算。
+
+调用记录的已知终态在完成帧前持久化，SDK 收到 completed/[DONE] 后停止读取仍可立即查询终态。SQLite 终态写入失败会中断传输，不继续发送成功完成帧；客户端在终态之前主动断开时，取消补写仍为异步。
+
+2026-10-09：正文录制开启时，已接受 delta 在转发前写入跨分片脱敏快照，停止/超时/异常 EOF 保留已收到的文字。设置关闭事务及输出代次条件阻止关闭后的新正文写入；客户端接收仍可继续，录制开关不取消推理或计费。存储失败返回安全内部错误或失败流，不发送虚假成功。部分正文不转化为完整上下文，原 native resume 与终态规则保留。

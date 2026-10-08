@@ -161,7 +161,7 @@ impl CodexAdapter {
                 let mut final_text = String::new();
                 let mut metadata = ResponseMetadata { actual_model, normalization, ..Default::default() };
                 loop {
-                    let event = match pending.next() { Some(event) => event, None => process.read(Duration::from_secs(120)).await? };
+                    let event = match pending.next() { Some(event) => event, None => process.read(localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT).await? };
                     if event["params"]["threadId"].as_str().is_some_and(|value| value != id) { continue; }
                     if event["params"]["turnId"].as_str().is_some_and(|value| value != turn_id) { continue; }
                     match event["method"].as_str() {
@@ -356,7 +356,7 @@ impl AppServer {
         let mut line = String::new();
         let size = timeout(wait, self.stdout.read_line(&mut line))
             .await
-            .map_err(|_| AdapterError::ProcessFailed)?
+            .map_err(|_| AdapterError::Timeout)?
             .map_err(|_| AdapterError::ProcessFailed)?;
         if size == 0 || size > 1024 * 1024 {
             return Err(AdapterError::ProcessFailed);

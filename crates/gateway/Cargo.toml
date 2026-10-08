@@ -15,6 +15,7 @@ localmux-quota = { path = "../quota" }
 localmux-router = { path = "../router" }
 localmux-security = { path = "../security" }
 localmux-storage = { path = "../storage" }
+localmux-telemetry = { path = "../telemetry" }
 serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }

@@ -61,6 +61,26 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
         app.clone().oneshot(cross_key).await.unwrap().status(),
         StatusCode::NOT_FOUND
     );
+    for store in [false, true] {
+        let request = Request::builder().method("POST").uri("/v1/responses")
+            .header("authorization", format!("Bearer {key}"))
+            .body(Body::from(serde_json::json!({"model":"codex/different", "input":"change rejected", "previous_response_id":first_id, "store":store}).to_string())).unwrap();
+        assert_eq!(
+            app.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::CONFLICT
+        );
+        let session = localmux_storage::list_conversations(&pool)
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            localmux_storage::list_run_events(&pool, &session.id)
+                .await
+                .unwrap()
+                .len(),
+            usize::from(store)
+        );
+    }
     let second = app
         .clone()
         .oneshot(send("second", Some(first_id), false))
@@ -101,6 +121,18 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
         sessions[0].provider_session_id.as_deref(),
         Some("thread-fixture")
     );
+    let calls = localmux_storage::list_calls(
+        &pool,
+        &localmux_storage::CallFilter {
+            conversation_id: Some(sessions[0].id.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(calls.len(), 4);
+    assert_eq!(calls.iter().filter(|r| r.status == "completed").count(), 3);
+    assert_eq!(calls.iter().filter(|r| r.status == "failed").count(), 1);
     pool.close().await;
     std::fs::remove_file(path).ok();
 }

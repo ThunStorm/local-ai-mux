@@ -304,3 +304,52 @@ summary { cursor: pointer; }
 /* Preserve vendor artwork; normalize only the presentation frame. */
 .software-icon { padding: 3px; background: var(--surface); border: 1px solid var(--line); }
 .software-icon.small { padding: 1px; }
+
+.call-records-description { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.65; font-weight: 400; }
+.call-filters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; margin: 0 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--inset); }
+.call-filter-fields { flex: 1 1 380px; display: grid; grid-template-columns: minmax(104px, .9fr) minmax(104px, .9fr) minmax(140px, 1.4fr); gap: 10px; min-width: 0; }
+.call-filters label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 400; }
+.call-filters :is(select, input, button) { height: 36px; min-height: 36px; margin: 0; font-size: 13px; line-height: 20px; border-radius: 8px; }
+.call-filters :is(select, input) { width: 100%; padding: 0 10px; background: var(--surface); color: var(--ink); }
+.call-filters select { -webkit-appearance: none; appearance: none; padding-right: 28px; }
+.call-select-label { position: relative; }
+.call-select-label::after { content: ""; position: absolute; right: 12px; bottom: 16px; width: 5px; height: 5px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); pointer-events: none; }
+.call-filter-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.call-filter-actions button { padding: 0 12px; font-weight: 500; }
+.call-filter-actions .call-clear { color: var(--muted); background: transparent; border-color: var(--line); }
+.call-filter-actions .call-clear:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: var(--surface); }
+@media (max-width: 880px) {
+  .call-filter-fields { flex-basis: 100%; }
+  .call-filter-actions { flex: 1; }
+  .call-filter-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr); }
+  .call-filter-actions .call-clear { margin-left: auto; }
+}
+.call-actions { display: flex; gap: 8px; }
+.call-detail { display: grid; grid-template-columns: minmax(90px, 140px) minmax(0, 1fr); gap: 6px 12px; font-size: 12px; }
+.call-detail dt { color: var(--muted); }
+.call-detail dd { margin: 0; overflow-wrap: anywhere; }
+.call-confirm { padding: 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; }
+.call-confirm button { margin-right: 8px; }
+.call-more, .resume-sessions { margin-top: 16px; }
+.resume-sessions summary { margin-bottom: 12px; cursor: pointer; }
+
+.resume-refresh { margin-bottom: 12px; }
+
+.call-recording-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.call-recording-control label { min-height: 32px; display: inline-flex; align-items: center; gap: 9px; font-weight: 550; cursor: pointer; }
+.call-recording-control input { width: 32px; height: 18px; min-height: 18px; padding: 0; appearance: none; -webkit-appearance: none; border-radius: 10px; background: var(--control); border: 0; cursor: pointer; position: relative; }
+.call-recording-control input::after { content: ""; position: absolute; width: 14px; height: 14px; top: 2px; left: 2px; border-radius: 50%; background: var(--surface); }
+.call-recording-control input:checked { background: var(--accent); }
+.call-recording-control input:checked::after { left: 16px; background: var(--on-accent); }
+.call-recording-control input:disabled { opacity: .48; cursor: wait; }
+.call-recording-state { color: var(--muted); font-size: 12px; }
+.recorded-dialogue { border-top: 1px solid var(--line); padding-top: 12px; }
+.recorded-dialogue header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.recorded-dialogue h3 { margin: 0; font-size: 14px; }
+.recorded-dialogue header span { color: var(--muted); font-size: 12px; }
+.recorded-dialogue header button { margin-left: auto; }
+.dialogue-scroll { max-height: 420px; overflow: auto; margin-top: 12px; }
+.dialogue-message { padding: 12px; border-radius: 8px; background: var(--inset); margin: 0 0 10px; }
+.dialogue-message strong { font-size: 12px; color: var(--muted); }
+.dialogue-message p, .dialogue-scroll pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; line-height: 1.65; }
+.dialogue-answer { background: var(--surface); border: 1px solid var(--line); }

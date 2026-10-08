@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add a persistent opt-in dialogue-recording switch with full submitted messages/input and received answers, including partial streams; stop active capture atomically when disabled and honor store:false.
+- Add migration 0012, credential-redacted content storage, on-demand safe dialogue viewing and cascade cleanup; preserve existing metadata, sessions and historical records without backfilling text.
+
+- Polish the call-history toolbar with consistent 36px controls, aligned field labels, grouped responsive actions and restrained cleanup emphasis; move legacy session refresh beside its own session list.
+
+- Expand default call metadata history to Chat, Responses, desktop playground and explicit model tests, including failures, timeouts, cancellation, truncation, filtering and interruption; keep native resume mappings independent and honor standard `store:false`.
+- Add migration 0011, restart recovery, stable paginated filters and Responses call grouping; offer details and confirmed cleanup while preserving active calls and existing sessions. Keep metadata separate from opt-in dialogue content; never store credentials, request parameters, client metadata or raw provider errors in the audit tables.
+
+- Separate 600-second Gateway execution deadlines from 180-second stream/CLI idle timeouts; bound Responses non-streaming/resume and continuous streams as well as Chat.
+- Serialize Agent connections across models, keys and Chat/Responses/model verification with a 5-second start interval and a 30-second queue timeout; release on failures/cancellation and expose read-only execution limits in health.
+- Preserve CLI result quota/auth categories without retaining provider text and distinguish idle timeout from generic process failure. Verify with virtual clocks and local fixtures only.
+
 - Retain the development default API key and explicit Agent permission across restarts/deployments; migrate the old memory key once, then fail explicitly on missing/corrupt/revoked credentials instead of silently rotating.
 - Persist only the local API credential in an owner-only Unix file (0700 directory / 0600 file); keep SQLite hashes/permissions and third-party credential behavior unchanged. Windows OS-store integration remains pending native acceptance.
 - Separate permission saving from explicit key replacement, preserve key identity and route/connection/rate limits, and document the formal-product access-control TODO list.

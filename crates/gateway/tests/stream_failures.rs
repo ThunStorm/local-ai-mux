@@ -18,14 +18,14 @@ use std::{
 };
 use tower::ServiceExt;
 
-struct DiagnosticAdapter(Arc<AtomicUsize>);
+struct DiagnosticAdapter(Arc<AtomicUsize>, AdapterKind);
 #[async_trait]
 impl Adapter for DiagnosticAdapter {
     fn id(&self) -> &'static str {
         "diagnostic"
     }
     fn kind(&self) -> AdapterKind {
-        AdapterKind::Provider
+        self.1.clone()
     }
     async fn health(&self) -> HealthStatus {
         HealthStatus::Healthy
@@ -44,8 +44,15 @@ impl Adapter for DiagnosticAdapter {
             })
             .collect())
     }
-    async fn invoke(&self, _: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
-        unreachable!("stream fixture")
+    async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        let seconds = if request.prompt == "never" { 601 } else { 130 };
+        tokio::time::sleep(Duration::from_secs(seconds)).await;
+        Ok(NormalizedResponse {
+            text: "delayed answer".into(),
+            provider_session_id: None,
+            metadata: Default::default(),
+        })
     }
     async fn invoke_stream(
         &self,
@@ -54,13 +61,19 @@ impl Adapter for DiagnosticAdapter {
         self.0.fetch_add(1, Ordering::SeqCst);
         Ok(Box::pin(async_stream::try_stream! {
             if request.prompt == "fail" { Err(AdapterError::ProviderUnavailable)?; }
-            let seconds = if request.prompt == "never" { 121 } else { 35 };
+            if request.prompt == "trickle" {
+                loop { tokio::time::sleep(Duration::from_secs(100)).await; yield "partial".to_owned(); }
+            }
+            let seconds = if request.prompt == "never" { 181 } else { 35 };
             tokio::time::sleep(Duration::from_secs(seconds)).await;
             yield "delayed answer".to_owned();
         }))
     }
 }
-fn post(key: &str, path: &str, body: serde_json::Value) -> Request<Body> {
+fn post(key: &str, path: &str, mut body: serde_json::Value) -> Request<Body> {
+    // Virtual-clock tests isolate deadlines/lanes from SQLite worker scheduling.
+    // The call_records suite exercises persistence with the real runtime clock.
+    body["store"] = serde_json::json!(false);
     Request::builder()
         .method("POST")
         .uri(path)
@@ -76,7 +89,10 @@ async fn slow_first_text_is_not_cut_off_at_thirty_seconds_and_timeout_is_honest(
     for prompt in ["slow", "never"] {
         let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
         state
-            .register(Arc::new(DiagnosticAdapter(Arc::new(AtomicUsize::new(0)))))
+            .register(Arc::new(DiagnosticAdapter(
+                Arc::new(AtomicUsize::new(0)),
+                AdapterKind::Provider,
+            )))
             .await;
         let (_, key) = state.create_key(&["chat:invoke"]).await.unwrap();
         let response = router(state.clone())
@@ -119,7 +135,10 @@ async fn stream_failure_cools_connection_without_claiming_its_models_disappeared
     let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
     let calls = Arc::new(AtomicUsize::new(0));
     state
-        .register(Arc::new(DiagnosticAdapter(calls.clone())))
+        .register(Arc::new(DiagnosticAdapter(
+            calls.clone(),
+            AdapterKind::Provider,
+        )))
         .await;
     let (_, key) = state
         .create_key(&["models:read", "chat:invoke", "responses:invoke"])
@@ -183,5 +202,171 @@ async fn stream_failure_cools_connection_without_claiming_its_models_disappeared
         .unwrap()
         .iter()
         .any(|model| model["id"] == "diagnostic/luna"));
+    assert_eq!(state.active_tasks(), 0);
+}
+
+#[tokio::test]
+async fn chat_and_responses_nonstream_allow_long_results_and_bound_total_time() {
+    for path in ["/v1/chat/completions", "/v1/responses"] {
+        for (prompt, expected) in [
+            ("slow", StatusCode::OK),
+            ("never", StatusCode::GATEWAY_TIMEOUT),
+        ] {
+            let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+            state
+                .register(Arc::new(DiagnosticAdapter(
+                    Arc::new(AtomicUsize::new(0)),
+                    AdapterKind::Provider,
+                )))
+                .await;
+            let (_, key) = state
+                .create_key(&["chat:invoke", "responses:invoke"])
+                .await
+                .unwrap();
+            let body = if path == "/v1/responses" {
+                serde_json::json!({"model":"diagnostic/luna","input":prompt,"store":false})
+            } else {
+                serde_json::json!({"model":"diagnostic/luna","messages":[{"role":"user","content":prompt}]})
+            };
+            tokio::time::pause();
+            let response = router(state.clone())
+                .oneshot(post(&key, path, body))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let body = String::from_utf8(bytes.to_vec()).unwrap();
+            assert!(body.contains(if expected == StatusCode::OK {
+                "delayed answer"
+            } else {
+                "LMX_PROCESS_TIMEOUT"
+            }));
+            assert_eq!(state.active_tasks(), 0);
+            tokio::time::resume();
+        }
+    }
+}
+
+#[tokio::test]
+async fn both_streams_stop_at_total_deadline_even_with_regular_deltas() {
+    for path in ["/v1/chat/completions", "/v1/responses"] {
+        let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        state
+            .register(Arc::new(DiagnosticAdapter(
+                Arc::new(AtomicUsize::new(0)),
+                AdapterKind::Provider,
+            )))
+            .await;
+        let (_, key) = state
+            .create_key(&["chat:invoke", "responses:invoke"])
+            .await
+            .unwrap();
+        let body = if path == "/v1/responses" {
+            serde_json::json!({"model":"diagnostic/luna","input":"trickle","stream":true})
+        } else {
+            chat("trickle", "diagnostic/luna")
+        };
+        let response = router(state.clone())
+            .oneshot(post(&key, path, body))
+            .await
+            .unwrap();
+        tokio::time::pause();
+        let started = tokio::time::Instant::now();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("partial") && body.contains("LMX_PROCESS_TIMEOUT"));
+        assert!(!body.contains("response.completed"));
+        assert!(started.elapsed() < Duration::from_secs(620));
+        assert_eq!(state.active_tasks(), 0);
+        tokio::time::resume();
+    }
+}
+
+#[tokio::test]
+async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_drop() {
+    let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+    let calls = Arc::new(AtomicUsize::new(0));
+    state
+        .register(Arc::new(DiagnosticAdapter(
+            calls.clone(),
+            AdapterKind::Agent,
+        )))
+        .await;
+    let (_, key) = state
+        .create_key_with_policy(
+            &["chat:invoke", "responses:invoke", "agent:invoke"],
+            localmux_security::KeyRestrictions {
+                execution_profile: localmux_security::ExecutionProfile::ReadOnlyAgent,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let (_, other_key) = state
+        .create_key_with_policy(
+            &["responses:invoke", "agent:invoke"],
+            localmux_security::KeyRestrictions {
+                execution_profile: localmux_security::ExecutionProfile::ReadOnlyAgent,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let app = router(state.clone());
+    let first = app
+        .clone()
+        .oneshot(post(
+            &key,
+            "/v1/chat/completions",
+            chat("slow", "diagnostic/luna"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    tokio::time::pause();
+    let blocked = app
+        .clone()
+        .oneshot(post(
+            &other_key,
+            "/v1/responses",
+            serde_json::json!({"model":"diagnostic/sibling","input":"slow","stream":true}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(blocked.headers()["Retry-After"], "5");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    drop(first);
+    assert_eq!(state.active_tasks(), 0);
+    let next = app
+        .clone()
+        .oneshot(post(
+            &key,
+            "/v1/chat/completions",
+            chat("slow", "diagnostic/luna"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(next.status(), StatusCode::OK);
+    drop(next);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(state.active_tasks(), 0);
+    // Measure the five-second spacing with a real clock: authorization uses a SQLite worker.
+    tokio::time::resume();
+    let started = tokio::time::Instant::now();
+    let third = app
+        .oneshot(post(
+            &key,
+            "/v1/chat/completions",
+            chat("slow", "diagnostic/luna"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(third.status(), StatusCode::OK);
+    assert!(started.elapsed() >= Duration::from_secs(5));
+    assert!(started.elapsed() < Duration::from_secs(6));
+    drop(third);
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
     assert_eq!(state.active_tasks(), 0);
 }
