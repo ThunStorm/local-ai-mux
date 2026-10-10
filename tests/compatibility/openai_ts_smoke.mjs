@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { VERSION } from "openai/version";
 import assert from "node:assert/strict";
 
 const client = new OpenAI({ apiKey: process.env.LOCALMUX_TEST_API_KEY, baseURL: process.env.LOCALMUX_TEST_BASE_URL });
@@ -42,3 +43,35 @@ assert.equal(privateChat.choices[0].message.content,"ts-no-store");
 const privateResponse = await client.responses.create({model:"mock/echo",input:"ts-response-no-store",store:false});
 assert.equal(privateResponse.output_text,"ts-response-no-store");
 console.log("TypeScript SDK: Chat and Responses store:false accepted");
+
+const strict = client.withOptions({maxRetries:0});
+const base = process.env.LOCALMUX_TEST_BASE_URL.replace(/\/v1$/,'');
+const health = async () => (await fetch(base + '/api/health')).json();
+const catalog = await (await fetch(base + '/api/chat/models',{headers:{Authorization:`Bearer ${process.env.LOCALMUX_TEST_API_KEY}`}})).json();
+assert.equal(catalog.schema_version,2);
+assert.equal((await health()).execution_limits.request_timeout_seconds,600);
+const {data:correlated,response:raw} = await strict.chat.completions.create({model:'mock/echo',messages:[{role:'user',content:'correlation'}],store:false}).withResponse();
+assert.equal(raw.headers.get('x-request-id'),correlated.localmux.request_id);
+for(const [model,finish,reason] of [['fixture/length','length','max_output_tokens'],['fixture/cancel',null,'cancelled']]){
+ const chat = await strict.chat.completions.create({model,messages:[{role:'user',content:'synthetic'}]});
+ assert.equal(chat.choices[0].finish_reason,finish);assert.equal(chat.usage.total_tokens,5);
+ assert.equal(chat.localmux.actual_model,'synthetic-upstream');assert.equal(chat.localmux.actual_model_source,'provider_reported');
+ const chunks=[];for await(const chunk of await strict.chat.completions.create({model,messages:[{role:'user',content:'synthetic'}],stream:true,stream_options:{include_usage:true}}))chunks.push(chunk);
+ assert.equal(chunks.at(-1).usage.total_tokens,5);assert.equal(chunks.at(-2).choices[0].finish_reason,finish);
+ for(const streaming of [false,true]){
+  let result = await strict.responses.create({model,input:'synthetic',stream:streaming});
+  if(streaming){const events=[];for await(const event of result)events.push(event);assert.equal(events.at(-1).type,'response.incomplete');result=events.at(-1).response;}
+  assert.equal(result.status,'incomplete');assert.equal(result.incomplete_details.reason,reason);assert.equal(result.usage.total_tokens,5);
+ }
+}
+for(const endpoint of ['chat','responses']){
+ const stream=endpoint==='chat'?await strict.chat.completions.create({model:'fixture/wait',messages:[{role:'user',content:'synthetic'}],stream:true,store:false}):await strict.responses.create({model:'fixture/wait',input:'synthetic',stream:true,store:false});
+ for await(const event of stream){if(endpoint==='chat'&&event.choices[0]?.delta.content||endpoint==='responses'&&event.type==='response.output_text.delta'){stream.controller.abort();break;}}
+ for(let i=0;i<100 && (await health()).active_tasks!==0;i++)await new Promise(resolve=>setTimeout(resolve,200));
+ assert.equal((await health()).active_tasks,0);
+}
+for(const [status,code] of [[429,'LMX_RATE_LIMITED'],[503,'LMX_PROVIDER_COOLDOWN']]){
+ try { await strict.chat.completions.create({model:'fixture/error',messages:[{role:'user',content:'synthetic'}]});assert.fail('fixture error must fail'); }
+ catch(error){assert.equal(error.status,status);assert.equal(error.error.code,code);assert.equal(error.headers.get('x-request-id'),error.error.request_id);}
+}
+console.log(`TypeScript OpenAI ${VERSION}: 25 contract cases passed / 0 failed (baseline + schema/limits/correlation + length/cancel/SSE + disconnect + 400/429/503)`);

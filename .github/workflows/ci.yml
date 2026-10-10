@@ -55,13 +55,4 @@ jobs:
           LOCALMUX_TEST_API_KEY: lmx_test_ci
           LOCALMUX_TEST_PORT: '18317'
           LOCALMUX_TEST_BASE_URL: http://127.0.0.1:18317/v1
-        run: |
-          target/debug/localmux-compat-server &
-          server=$!
-          trap 'kill "$server"' EXIT
-          for i in {1..30}; do
-            if curl --silent --fail http://127.0.0.1:18317/api/health > /dev/null; then break; fi
-            sleep 1
-          done
-          python tests/compatibility/openai_python_smoke.py
-          node tests/compatibility/openai_ts_smoke.mjs
+        run: bash scripts/sdk-smoke.sh

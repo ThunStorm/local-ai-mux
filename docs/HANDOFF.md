@@ -1,5 +1,7 @@
 # 交接记录
 
+2026-10-10 Gateway 可靠性 M6：新增独立SDK脚本/feature-only fixture和基线测量，CI复用原框架；Python3.24.0与TS7.23.0各25 cases / 0 failed，独立Rust106 passed / 0 failed / 2 ignored，前端7 passed，feature harness与全仓Clippy通过。SDK取消验收绕过回环代理，未消费Body虚拟期限及CLI取消无观测遗留PID/僵尸通过。合成GUI验证扫描/连接验证/API启停/主动配置复制/记录、旧NULL及过期能力；无真实生成/授权变化。M0–M6矩阵见RUNTIME_CONTRACT_VALIDATION_2026-10-10.md；当前等待用户确认的并行托盘包完成，再统一最新整树验证、0013备份迁移、本机部署。M7未实施。
+
 2026-10-10 M2/M4 门禁补强：目录记录真实刷新Unix时间，不在读取时重新推算观测时间；最终事件带未验证累计usage时先校验再回用先前可信本次快照，GUI/数据库/wire不互相矛盾。Chat/Responses流回归确认session_total=999不覆盖本次14，未知元数据清空来源/计数而不补0。Gateway独立回归通过；全量验收发现并行托盘任务测试暂未通过，按用户答复保留并等待，不部署中间树。
 
 2026-10-10 M1 门禁补强：SSE 使用独立600秒期限守护和单帧有界缓冲，下游停止消费也会在总期释放CallGuard/Adapter/进程/lane。离线未消费Body在601秒前释放且不转发迟到成功；取消任务由Tokio下一调度收口。官方SDK回环测试必须NO_PROXY，避免本机代理继续保持服务端连接导致无法观察直接客户端关闭；原15秒心跳与600/180/30/5保护值不改。

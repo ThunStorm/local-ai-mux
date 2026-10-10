@@ -447,3 +447,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ### 核心决策
 
 **Mux 只提供稳定、可观测、可正确拒绝的通用模型服务。短 ID、旅游证据、视频阶段、模型业务适用性及跨系统 Golden 均归消费端实现。两个 Agent 可以并行开发、分别验收，最后仅通过现有标准 API 进行受控联调。**
+
+## 13. 本轮实施状态（2026-10-10）
+
+M0–M6 的源码与离线门禁已增量实施，单仓证据见[运行契约审计](architecture/RUNTIME_CONTRACT_GAP_AUDIT.md)、[验收矩阵](architecture/RUNTIME_CONTRACT_VALIDATION_2026-10-10.md)与[交接](HANDOFF.md)。唯一迁移0013；标准API与schema v2保留。M7未自动进入本轮；真实Provider生成、Schema强保证、远端取消/计费、Windows与原生ARM64继续NOT_VERIFIED/UNKNOWN。最终整树验证与本机部署按用户要求等待并行托盘任务完成，不能把Gateway独立通过或历史计数当成整体发布通过。

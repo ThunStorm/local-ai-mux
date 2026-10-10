@@ -245,10 +245,7 @@ mod reliability_tests {
                     .await
                     .unwrap();
                 let state = String::from_utf8_lossy(&result.stdout);
-                if !result.status.success()
-                    || state.trim().is_empty()
-                    || state.trim().starts_with('Z')
-                {
+                if !result.status.success() || state.trim().is_empty() {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
