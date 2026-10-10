@@ -1,5 +1,13 @@
 # 交接记录
 
+2026-10-10 Gateway 能力/可靠性最终交付：指定计划 M0–M6 已完成，M7 按计划保留后续独立授权；以下分阶段记录代表执行时状态，以本条收口为准。完成入站600秒统一预算、队列/节流/Adapter分时、停止消费也独立到期的有界SSE、v2目录与证据时效、0013可空有界诊断、可信usage/finish/实际型号与关联ID、CLI有界读取/owned进程组清理、现有GUI诊断和独立官方SDK门禁。没有至简修改、Provider生成/新连接、扩权、Key重建或历史清理；真实Schema保证、远端取消/计费、Windows与原生ARM64仍UNKNOWN/NOT_VERIFIED。验收矩阵见 [运行契约验收](architecture/RUNTIME_CONTRACT_VALIDATION_2026-10-10.md)。
+
+最终当前整树 `bash scripts/verify.sh` Rust120 passed / 0 failed / 2 ignored，前端7 passed；全仓Clippy及feature-enabled兼容服务Clippy通过。Python OpenAI3.24.0、TS7.23.0各25 cases / 0 failed；测试进程使用独立内存DB、合成Key与回环NO_PROXY。Playwright+Edge合成IPC验证扫描/连接验证/API启停/主动复制合成配置、阶段诊断/旧NULL/过期能力、960/800/760/1120浅深/Escape，控制台无错误；原生安装版复核主窗口、API恢复运行、连接状态/更新时间、48条旧历史及原录制开关。新诊断的完整故障矩阵来自隔离fixture，不冒充真实上游验收。
+
+部署已等待用户确认的并行托盘任务完成，再从 `codex/dev / e6e31e8 + 已保留的图标/托盘及文档迁移工作树` 执行 `bash scripts/deploy-local-macos.sh`，正常退出旧版并安装重启 `~/Applications/LocalAiMux.app`，未强制结束任务。部署前 active_tasks=0 / schema12 / integrity=ok；一致备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-reliability-20261010-161142.db`（600权限，可能含用户已录正文，不属诊断导出）。部署后 schema13 / integrity=ok / FK=0，默认Key完整权限/限制及凭据文件摘要、4个连接、settings/录制代次、48个调用ID和既有Responses ID均与备份前一致，旧diagnostics仍NULL。用户已有录制设置保持开启，未自动改开关。API已恢复部署前运行状态，health为ok、任务0、保护值600/180/并发1/队列30/间隔5；进程存活。安装/release/build-info主程序SHA-256均 `047aaf87b6776cfa4f8bd63a1e5628056de0347e99bc55dda3b195d4e59513d9`，实际Mach-O为x86_64，不以dmg文件名当ARM64证据。部署后仅收敛文档，无代码修改。
+
+本轮Gateway源码、测试和文档按工作包本地提交至codex/dev；未推送、不发布Release，既有图标/托盘与项目计划路径迁移改动保持原工作树状态、未纳入本轮提交。回滚需先任务0，保存升级后数据，再恢复pre-0013数据库与匹配旧程序；不在用户DB篡改迁移账本或删除新记录。
+
 2026-10-10 Gateway 可靠性 M6：新增独立SDK脚本/feature-only fixture和基线测量，CI复用原框架；Python3.24.0与TS7.23.0各25 cases / 0 failed，独立Rust106 passed / 0 failed / 2 ignored，前端7 passed，feature harness与全仓Clippy通过。SDK取消验收绕过回环代理，未消费Body虚拟期限及CLI取消无观测遗留PID/僵尸通过。合成GUI验证扫描/连接验证/API启停/主动配置复制/记录、旧NULL及过期能力；无真实生成/授权变化。M0–M6矩阵见RUNTIME_CONTRACT_VALIDATION_2026-10-10.md；当前等待用户确认的并行托盘包完成，再统一最新整树验证、0013备份迁移、本机部署。M7未实施。
 
 2026-10-10 M2/M4 门禁补强：目录记录真实刷新Unix时间，不在读取时重新推算观测时间；最终事件带未验证累计usage时先校验再回用先前可信本次快照，GUI/数据库/wire不互相矛盾。Chat/Responses流回归确认session_total=999不覆盖本次14，未知元数据清空来源/计数而不补0。Gateway独立回归通过；全量验收发现并行托盘任务测试暂未通过，按用户答复保留并等待，不部署中间树。

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify and deploy the final macOS reliability tree after the parallel tray package: migrate to schema 13 while retaining the stable key/scopes, connections, recording setting and existing history; preserve unverified upstream/Windows/ARM64 boundaries.
+
 - Gate reliability with isolated official Python/TypeScript SDK servers (25 contract cases each), 400/429/503 and cancellation/truncation coverage, direct loopback transport, bounded diagnostics/storage measurements and the existing cross-platform CI.
 
 - Preserve catalog observation timestamps at refresh and retain the last verified request-usage snapshot when a final event reports untrusted cumulative usage; keep persisted and wire metadata consistent.

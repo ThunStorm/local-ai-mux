@@ -450,4 +450,4 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## 13. 本轮实施状态（2026-10-10）
 
-M0–M6 的源码与离线门禁已增量实施，单仓证据见[运行契约审计](architecture/RUNTIME_CONTRACT_GAP_AUDIT.md)、[验收矩阵](architecture/RUNTIME_CONTRACT_VALIDATION_2026-10-10.md)与[交接](HANDOFF.md)。唯一迁移0013；标准API与schema v2保留。M7未自动进入本轮；真实Provider生成、Schema强保证、远端取消/计费、Windows与原生ARM64继续NOT_VERIFIED/UNKNOWN。最终整树验证与本机部署按用户要求等待并行托盘任务完成，不能把Gateway独立通过或历史计数当成整体发布通过。
+M0–M6 的源码与离线门禁已增量实施，单仓证据见[运行契约审计](architecture/RUNTIME_CONTRACT_GAP_AUDIT.md)、[验收矩阵](architecture/RUNTIME_CONTRACT_VALIDATION_2026-10-10.md)与[交接](HANDOFF.md)。唯一迁移0013；标准API与schema v2保留。M7未自动进入本轮；真实Provider生成、Schema强保证、远端取消/计费、Windows与原生ARM64继续NOT_VERIFIED/UNKNOWN。并行托盘任务完成后，最终整树验证与本机部署已完成：Rust120 passed / 0 failed / 2 ignored、前端7 passed、官方Python/TS SDK各25 cases / 0 failed、Clippy通过；安装后schema13、完整性与稳定Key/权限/连接/48条历史保留。安装二进制SHA与完整记录见HANDOFF，不把离线证据当真实上游验收。
