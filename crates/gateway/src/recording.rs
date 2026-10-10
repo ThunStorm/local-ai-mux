@@ -6,13 +6,14 @@ use localmux_adapter_sdk::FinishReason;
 use localmux_storage::CallRecord;
 use sqlx::SqlitePool;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use tokio::time::Instant;
 
 #[derive(Clone)]
 pub(crate) struct Call(
     Option<Arc<Mutex<CallRecord>>>,
     SqlitePool,
     Arc<tokio::sync::Mutex<Option<ContentCapture>>>,
+    super::execution::ExecutionBudget,
 );
 struct ContentCapture {
     generation: i64,
@@ -48,6 +49,9 @@ fn redact_value(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 impl Call {
+    pub fn budget(&self) -> super::execution::ExecutionBudget {
+        self.3.clone()
+    }
     pub async fn request(&self, messages: &serde_json::Value) -> anyhow::Result<()> {
         let Some(record) = &self.0 else {
             return Ok(());
@@ -116,6 +120,13 @@ impl Call {
         }
     }
     pub fn result(&self, metadata: &ResponseMetadata) {
+        if self.budget().expired() {
+            self.fail("LMX_PROCESS_TIMEOUT");
+            return;
+        }
+        if self.terminal() {
+            return;
+        }
         self.metadata(metadata);
         if let Some(record) = &self.0 {
             record.lock().unwrap().status = match metadata.finish_reason {
@@ -210,9 +221,15 @@ impl CallGuard {
                 Some(Arc::new(Mutex::new(record))),
                 pool.clone(),
                 Arc::new(tokio::sync::Mutex::new(None)),
+                Default::default(),
             )
         } else {
-            Call(None, pool.clone(), Arc::new(tokio::sync::Mutex::new(None)))
+            Call(
+                None,
+                pool.clone(),
+                Arc::new(tokio::sync::Mutex::new(None)),
+                Default::default(),
+            )
         };
         let guard = Self {
             call,
@@ -225,14 +242,31 @@ impl CallGuard {
         }
         Ok(guard)
     }
+    pub fn with_budget(mut self, budget: super::execution::ExecutionBudget) -> Self {
+        self.start = budget.accepted;
+        self.call.3 = budget;
+        self
+    }
     pub fn call(&self) -> Call {
         self.call.clone()
     }
     fn snapshot(&self) -> Option<CallRecord> {
         self.call.0.as_ref().map(|record| {
             let mut record = record.lock().unwrap().clone();
+            if self.call.budget().expired()
+                && matches!(record.status.as_str(), "in_progress" | "completed")
+            {
+                record.status = "timeout".into();
+                record.error_code = Some("LMX_PROCESS_TIMEOUT".into());
+            }
             if record.status == "in_progress" {
-                record.status = "cancelled".into();
+                record.status = if self.call.budget().expired() {
+                    record.error_code = Some("LMX_PROCESS_TIMEOUT".into());
+                    "timeout"
+                } else {
+                    "cancelled"
+                }
+                .into();
             }
             record.finished_at = Some(now());
             record.elapsed_ms = Some(self.start.elapsed().as_millis().min(i64::MAX as u128) as i64);

@@ -1,9 +1,10 @@
+mod execution;
 mod recording;
 mod responses;
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{Extension, State},
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -103,6 +104,7 @@ impl GatewayState {
     async fn acquire_agent(
         &self,
         adapter: &dyn Adapter,
+        budget: &execution::ExecutionBudget,
     ) -> Result<Option<AgentPermit>, Box<Response>> {
         if adapter.kind() != AdapterKind::Agent {
             return Ok(None);
@@ -115,21 +117,35 @@ impl GatewayState {
             .entry(adapter.id().to_owned())
             .or_default()
             .clone();
-        let mut permit = tokio::time::timeout(AGENT_QUEUE_TIMEOUT, lane.lock_owned())
-            .await
-            .map_err(|_| {
-                let mut response = error(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "LMX_RATE_LIMITED",
-                    "Local CLI connection is busy; retry later",
-                );
-                response
-                    .headers_mut()
-                    .insert("Retry-After", "5".parse().unwrap());
-                Box::new(response)
-            })?;
+        let mut permit = tokio::time::timeout_at(
+            budget.child_deadline(AGENT_QUEUE_TIMEOUT),
+            lane.lock_owned(),
+        )
+        .await
+        .map_err(|_| {
+            if budget.expired() {
+                return Box::new(budget.timeout_response());
+            }
+            let mut response = error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "LMX_RATE_LIMITED",
+                "Local CLI connection is busy; retry later",
+            );
+            response
+                .headers_mut()
+                .insert("Retry-After", "5".parse().unwrap());
+            Box::new(response)
+        })?;
         if let Some(last) = *permit {
-            tokio::time::sleep_until(last + AGENT_REQUEST_INTERVAL).await;
+            tokio::time::timeout_at(
+                budget.deadline,
+                tokio::time::sleep_until(last + AGENT_REQUEST_INTERVAL),
+            )
+            .await
+            .map_err(|_| Box::new(budget.timeout_response()))?;
+        }
+        if budget.expired() {
+            return Err(Box::new(budget.timeout_response()));
         }
         if let Some(response) = connection_cooldown(self, adapter.id()) {
             return Err(Box::new(response));
@@ -305,6 +321,8 @@ impl GatewayState {
             .is_some_and(|record| record.id == id))
     }
     pub async fn verify_reported_model(&self, model: &str) -> Result<(), AdapterError> {
+        let budget = execution::ExecutionBudget::default();
+        let _run = self.begin_run();
         let mut guard = recording::CallGuard::start(
             &self.pool,
             None,
@@ -315,9 +333,15 @@ impl GatewayState {
             true,
         )
         .await
-        .map_err(|_| AdapterError::ProcessFailed)?;
+        .map_err(|_| AdapterError::ProcessFailed)?
+        .with_budget(budget.clone());
         let call = guard.call();
-        let result = self.verify_reported_model_inner(model, call.clone()).await;
+        let result = tokio::time::timeout_at(
+            budget.deadline,
+            self.verify_reported_model_inner(model, call.clone()),
+        )
+        .await
+        .unwrap_or(Err(AdapterError::Timeout));
         if let Err(kind) = &result {
             call.fail(adapter_error_details(kind).1);
         }
@@ -352,17 +376,16 @@ impl GatewayState {
             &format!("test_{}", Uuid::new_v4().simple()),
             None,
         );
-        let _run = self.begin_run();
         let _permit = self
-            .acquire_agent(adapter.as_ref())
+            .acquire_agent(adapter.as_ref(), &call.budget())
             .await
             .map_err(|_| AdapterError::RateLimited)?;
         let prompt = "Reply with OK.";
         call.request(&serde_json::json!([{"role":"user","content":prompt}]))
             .await
             .map_err(|_| AdapterError::ProcessFailed)?;
-        let response = tokio::time::timeout(
-            REQUEST_TIMEOUT,
+        let response = tokio::time::timeout_at(
+            call.budget().deadline,
             adapter.invoke(NormalizedRequest {
                 model: model.into(),
                 prompt: prompt.into(),
@@ -408,6 +431,7 @@ pub fn router(state: GatewayState) -> Router {
         .route("/v1/chat/completions", post(chat))
         .route("/v1/responses", post(responses::create))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), execution::admit))
         .with_state(state)
 }
 pub async fn serve(state: GatewayState, port: u16) -> std::io::Result<()> {
@@ -606,7 +630,12 @@ fn breaker_error(state: &GatewayState, adapter_id: &str, kind: &AdapterError) {
         state.breaker.open(adapter_id, Instant::now(), duration);
     }
 }
-async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes) -> Response {
+async fn chat(
+    State(state): State<GatewayState>,
+    Extension(budget): Extension<execution::ExecutionBudget>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     let key = match authorized(&state, &headers, "chat:invoke").await {
         Ok(key) => key,
         Err(response) => return *response,
@@ -640,7 +669,7 @@ async fn chat(State(state): State<GatewayState>, headers: HeaderMap, body: Bytes
     )
     .await
     {
-        Ok(guard) => guard,
+        Ok(guard) => guard.with_budget(budget),
         Err(_) => return recording::persistence_error(),
     };
     let call = guard.call();
@@ -889,40 +918,40 @@ async fn chat_inner(
         .stream_options
         .as_ref()
         .is_some_and(|options| options.include_usage);
-    let run = state.begin_run();
-    let permit = match state.acquire_agent(adapter.as_ref()).await {
+    let permit = match state.acquire_agent(adapter.as_ref(), &call.budget()).await {
         Ok(permit) => permit,
         Err(response) => return *response,
     };
-    let deadline = tokio::time::Instant::now() + REQUEST_TIMEOUT;
+    let deadline = call.budget().deadline;
     let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
     let created = now();
     call.target(&actual_model, &adapter_id, &id, None);
     if request.stream {
-        let mut provider_stream =
-            match tokio::time::timeout(Duration::from_secs(30), adapter.invoke_events(normalized))
-                .await
-            {
-                Ok(Ok(stream)) => stream,
-                Ok(Err(kind)) => {
-                    breaker_error(&state, &adapter_id, &kind);
-                    return adapter_error(kind);
-                }
-                Err(_) => {
-                    state
-                        .breaker
-                        .open(&adapter_id, Instant::now(), Duration::from_secs(30));
-                    return error(
-                        StatusCode::GATEWAY_TIMEOUT,
-                        "LMX_PROCESS_TIMEOUT",
-                        "Upstream first response timed out",
-                    );
-                }
-            };
+        let mut provider_stream = match tokio::time::timeout_at(
+            call.budget().child_deadline(Duration::from_secs(30)),
+            adapter.invoke_events(normalized),
+        )
+        .await
+        {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(kind)) => {
+                breaker_error(&state, &adapter_id, &kind);
+                return adapter_error(kind);
+            }
+            Err(_) => {
+                state
+                    .breaker
+                    .open(&adapter_id, Instant::now(), Duration::from_secs(30));
+                return error(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "LMX_PROCESS_TIMEOUT",
+                    "Upstream first response timed out",
+                );
+            }
+        };
         let model = actual_model.clone();
         let route_state = state.clone();
         let events = async_stream::stream! {
-            let _run = run;
             let _permit = permit;
             let role = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]});
             yield Ok::<Event, Infallible>(Event::default().data(role.to_string()));

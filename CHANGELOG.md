@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bound Gateway requests from HTTP admission through auth, route, Agent queue/spacing, execution and response consumption with one 600-second monotonic deadline; keep existing limits and add safe X-Request-ID correlation.
+
 - Add a persistent opt-in dialogue-recording switch with full submitted messages/input and received answers, including partial streams; stop active capture atomically when disabled and honor store:false.
 - Add migration 0012, credential-redacted content storage, on-demand safe dialogue viewing and cascade cleanup; preserve existing metadata, sessions and historical records without backfilling text.
 

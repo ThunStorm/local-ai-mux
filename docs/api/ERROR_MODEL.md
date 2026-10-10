@@ -14,3 +14,5 @@ Gateway 返回 HTTP 状态与 OpenAI 风格 `{"error":{"message","type","code","
 
 
 2026-10-08：Gateway 总期与 CLI 空闲超时统一返回 504 LMX_PROCESS_TIMEOUT；连接队列等待超过 30 秒返回 429 LMX_RATE_LIMITED、Retry-After=5，表示本机忙，不等于厂商额度耗尽。CLI result 的 is_error/subtype=error 在内存识别 quota/credit、rate limit、authentication 后返回白名单类别，不保存原始错误结果。LMX_QUOTA_EXHAUSTED、LMX_AUTH_REQUIRED 和 LMX_RATE_LIMITED 保持区别。所有错误释放占用，未完成/超时不保存成功响应映射；仅关闭本机进程句柄不证明上游停止计费。
+
+2026-10-10 M1：HTTP X-Request-ID 与非流错误 error.request_id 使用同一 Gateway 入站 ID，客户端头不能覆盖。总预算从入站起算；排队/节流耗尽总预算为 504 LMX_PROCESS_TIMEOUT，单独 lane 的 30 秒上限仍为 429 LMX_RATE_LIMITED / Retry-After=5。

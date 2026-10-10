@@ -213,9 +213,10 @@ async fn chat_and_responses_nonstream_allow_long_results_and_bound_total_time() 
             ("never", StatusCode::GATEWAY_TIMEOUT),
         ] {
             let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+            let calls = Arc::new(AtomicUsize::new(0));
             state
                 .register(Arc::new(DiagnosticAdapter(
-                    Arc::new(AtomicUsize::new(0)),
+                    calls.clone(),
                     AdapterKind::Provider,
                 )))
                 .await;
@@ -229,10 +230,12 @@ async fn chat_and_responses_nonstream_allow_long_results_and_bound_total_time() 
                 serde_json::json!({"model":"diagnostic/luna","messages":[{"role":"user","content":prompt}]})
             };
             tokio::time::pause();
-            let response = router(state.clone())
-                .oneshot(post(&key, path, body))
-                .await
-                .unwrap();
+            let pending = tokio::spawn(router(state.clone()).oneshot(post(&key, path, body)));
+            // Keep virtual time stationary while SQLite authorization runs on its real worker.
+            while calls.load(Ordering::SeqCst) == 0 && !pending.is_finished() {
+                tokio::task::yield_now().await;
+            }
+            let response = pending.await.unwrap().unwrap();
             assert_eq!(response.status(), expected);
             let bytes = response.into_body().collect().await.unwrap().to_bytes();
             let body = String::from_utf8(bytes.to_vec()).unwrap();

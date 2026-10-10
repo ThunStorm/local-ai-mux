@@ -1,0 +1,193 @@
+//! One monotonic budget from HTTP admission, including queue and response consumption.
+use axum::{body::Body, extract::Request, middleware::Next, response::Response};
+use futures_util::StreamExt;
+use tokio::time::Instant;
+
+#[derive(Clone)]
+pub(crate) struct ExecutionBudget {
+    pub accepted: Instant,
+    pub deadline: Instant,
+    pub request_id: String,
+}
+impl Default for ExecutionBudget {
+    fn default() -> Self {
+        let accepted = Instant::now();
+        Self {
+            accepted,
+            deadline: accepted + super::REQUEST_TIMEOUT,
+            request_id: format!("req_{}", uuid::Uuid::new_v4().simple()),
+        }
+    }
+}
+impl ExecutionBudget {
+    pub fn child_deadline(&self, limit: std::time::Duration) -> Instant {
+        self.deadline.min(Instant::now() + limit)
+    }
+    pub fn expired(&self) -> bool {
+        Instant::now() >= self.deadline
+    }
+    pub fn timeout_response(&self) -> Response {
+        super::error(
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            "LMX_PROCESS_TIMEOUT",
+            "Request deadline exceeded",
+        )
+    }
+}
+
+pub(crate) async fn admit(
+    axum::extract::State(state): axum::extract::State<super::GatewayState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let budget = ExecutionBudget::default();
+    let run = (request.method() == axum::http::Method::POST).then(|| state.begin_run());
+    request.extensions_mut().insert(budget.clone());
+    let mut response = match tokio::time::timeout_at(budget.deadline, next.run(request)).await {
+        Ok(response) => response,
+        Err(_) => budget.timeout_response(),
+    };
+    if budget.expired() && response.status().is_success() {
+        response = budget.timeout_response();
+    }
+    if !response.status().is_success() {
+        let (parts, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, 64 * 1024)
+            .await
+            .unwrap_or_default();
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        if value["error"].is_object() {
+            value["error"]["request_id"] = budget.request_id.clone().into();
+            response = Response::from_parts(parts, Body::from(value.to_string()));
+        } else {
+            response = Response::from_parts(parts, Body::from(bytes));
+        }
+    }
+    response
+        .headers_mut()
+        .insert("X-Request-ID", budget.request_id.parse().unwrap());
+    if !response.headers().get("content-type").is_some_and(|v| {
+        v.to_str()
+            .unwrap_or_default()
+            .starts_with("text/event-stream")
+    }) {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let mut data = body.into_data_stream();
+    let stream = async_stream::stream! {
+        let _run = run;
+        loop {
+            match tokio::time::timeout_at(budget.deadline, data.next()).await {
+                Ok(Some(frame)) => yield frame,
+                Ok(None) => break,
+                Err(_) => {
+                    drop(data);
+                        let failure = serde_json::json!({"error":{"message":"Request deadline exceeded","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","reason_code":"overall_deadline","limiting_layer":"gateway","retryable":false,"request_id":budget.request_id}});
+                        yield Ok(axum::body::Bytes::from(format!("data: {}\n\n", failure)));
+                    break;
+                }
+            }
+        }
+    };
+    Response::from_parts(parts, Body::from_stream(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use localmux_adapter_sdk::{
+        Adapter, AdapterError, NormalizedRequest, NormalizedResponse, NormalizedStream,
+    };
+    use localmux_domain::{AdapterKind, HealthStatus, ModelDescriptor};
+    use std::time::Duration;
+    struct Agent;
+    #[async_trait]
+    impl Adapter for Agent {
+        fn id(&self) -> &'static str {
+            "synthetic"
+        }
+        fn kind(&self) -> AdapterKind {
+            AdapterKind::Agent
+        }
+        async fn health(&self) -> HealthStatus {
+            HealthStatus::Healthy
+        }
+        async fn list_models(&self) -> Result<Vec<ModelDescriptor>, AdapterError> {
+            Ok(vec![])
+        }
+        async fn invoke(&self, _: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
+            Err(AdapterError::ProcessFailed)
+        }
+        async fn invoke_stream(
+            &self,
+            _: NormalizedRequest,
+        ) -> Result<NormalizedStream, AdapterError> {
+            Err(AdapterError::ProcessFailed)
+        }
+    }
+    #[tokio::test]
+    async fn queue_interval_and_execution_share_the_admission_deadline() {
+        let state = super::super::GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        tokio::time::pause();
+        let initial = ExecutionBudget::default();
+        let permit = state.acquire_agent(&Agent, &initial).await.unwrap();
+        let budget = ExecutionBudget::default();
+        let pending = tokio::spawn({
+            let state = state.clone();
+            let budget = budget.clone();
+            async move { state.acquire_agent(&Agent, &budget).await }
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(25)).await;
+        drop(permit);
+        let permit = pending.await.unwrap().unwrap();
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert!((35_000..=35_005).contains(&budget.accepted.elapsed().as_millis()));
+        assert!(budget.deadline - tokio::time::Instant::now() <= Duration::from_secs(565));
+        drop(permit);
+        drop(
+            state
+                .acquire_agent(&Agent, &ExecutionBudget::default())
+                .await
+                .unwrap(),
+        );
+        let mut expired_interval = ExecutionBudget::default();
+        expired_interval.deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        let error = state
+            .acquire_agent(&Agent, &expired_interval)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::GATEWAY_TIMEOUT);
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert!(state
+            .acquire_agent(&Agent, &ExecutionBudget::default())
+            .await
+            .is_ok());
+    }
+    #[tokio::test]
+    async fn queue_deadline_precedes_start_and_does_not_leak_a_lane() {
+        let state = super::super::GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        tokio::time::pause();
+        let permit = state
+            .acquire_agent(&Agent, &ExecutionBudget::default())
+            .await
+            .unwrap();
+        let error = state
+            .acquire_agent(&Agent, &ExecutionBudget::default())
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(error.headers()["Retry-After"], "5");
+        let mut budget = ExecutionBudget::default();
+        budget.deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let error = state.acquire_agent(&Agent, &budget).await.unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::GATEWAY_TIMEOUT);
+        drop(permit);
+        assert!(state
+            .acquire_agent(&Agent, &ExecutionBudget::default())
+            .await
+            .is_ok());
+    }
+}

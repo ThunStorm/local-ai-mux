@@ -1,7 +1,7 @@
 use super::{adapter_error, authorized, error, now, GatewayState};
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{Extension, State},
     http::{HeaderMap, StatusCode},
     response::{
         sse::{Event, Sse},
@@ -265,6 +265,7 @@ fn event(name: &str, data: Value) -> Event {
 
 pub async fn create(
     State(state): State<GatewayState>,
+    Extension(budget): Extension<super::execution::ExecutionBudget>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -293,7 +294,7 @@ pub async fn create(
     )
     .await
     {
-        Ok(guard) => guard,
+        Ok(guard) => guard.with_budget(budget),
         Err(_) => return super::recording::persistence_error(),
     };
     let call = guard.call();
@@ -383,15 +384,17 @@ async fn create_inner(
         messages: Vec::new(),
         parameters: Default::default(),
     };
-    let run = state.begin_run();
-    let permit = match state.acquire_agent(context.adapter.as_ref()).await {
+    let permit = match state
+        .acquire_agent(context.adapter.as_ref(), &call.budget())
+        .await
+    {
         Ok(permit) => permit,
         Err(response) => return *response,
     };
-    let deadline = tokio::time::Instant::now() + super::REQUEST_TIMEOUT;
+    let deadline = call.budget().deadline;
     if request.stream {
-        let session = match tokio::time::timeout(
-            Duration::from_secs(30),
+        let session = match tokio::time::timeout_at(
+            call.budget().child_deadline(Duration::from_secs(30)),
             context
                 .adapter
                 .invoke_session_events(normalized, context.provider_session_id.as_deref()),
@@ -424,7 +427,6 @@ async fn create_inner(
         let previous = request.previous_response_id;
         let store = request.store.unwrap_or(true);
         let events = async_stream::stream! {
-            let _run = run;
             let _permit = permit;
             let mut provider_stream = session.stream;
             let mut text = String::new();
