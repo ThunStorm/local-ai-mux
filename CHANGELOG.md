@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve catalog observation timestamps at refresh and retain the last verified request-usage snapshot when a final event reports untrusted cumulative usage; keep persisted and wire metadata consistent.
+
 - Enforce stream deadlines independently of downstream polling with one buffered frame and an abort-on-drop producer; release lanes and owned work even when an SSE body remains unconsumed. Keep 15-second heartbeats and existing execution limits.
 
 - Bound CLI catalog/JSONL reads before allocation grows past 1 MiB and share isolated owned process-group cleanup across Codex/Qoder/CodeBuddy; test cancellation, malformed output, spawn failure and unrelated-process preservation without upstream calls.

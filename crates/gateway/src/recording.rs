@@ -132,6 +132,8 @@ impl Call {
         let mut metrics = self.3.metrics.lock().unwrap();
         metrics.finish_source = metadata.finish_source.clone();
         metrics.actual_model_source = metadata.actual_model_source.clone();
+        metrics.usage_source = None;
+        metrics.usage_scope = None;
         if let Some(usage) = &metadata.usage {
             metrics.usage_source =
                 (usage.source == "provider_reported").then(|| "provider_reported".into());
@@ -152,6 +154,9 @@ impl Call {
                 .into(),
             );
             record.actual_model = metadata.actual_model.as_deref().map(safe_model);
+            record.input_tokens = None;
+            record.output_tokens = None;
+            record.total_tokens = None;
             if let Some(usage) = &metadata.usage {
                 record.input_tokens = usage.input_tokens.and_then(|n| i64::try_from(n).ok());
                 record.output_tokens = usage.output_tokens.and_then(|n| i64::try_from(n).ok());

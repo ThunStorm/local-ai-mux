@@ -26,3 +26,5 @@ Phase 6 增加动态虚拟模型 `free`、`cheap`、`balanced`、`best`。只有
 2026-10-10 M4：标准 model 始终表示 Gateway 解析并选定的公开型号；localmux.resolved_model 同义，actual_model 仅取有来源且有界的上游元数据，不读答案自述。actual_model_source 为 provider_reported/app_server_thread/app_server_rerouted；finish_source 只有实际已知上游原因才为 provider_reported，其他为 null。usage 只接受 provider_reported 的 request/last_turn 快照，累计 session_total 不当本次使用，unknown=null。Typed Adapter 的无来源 stop/usage/model 会降未知，需显式提供来源。
 
 localmux 采用固定键集合，JSON 不超过 4096 字节：原 finish_reason/usage/actual_model/normalization/usage_status/cancellation_guarantee 保留，兼容添加 source、response_id、timing 和 upstream_cancel_verified。request_id 与 HTTP X-Request-ID、调用记录关联 ID 一致；Chat/Responses 标准 id 与扩展 response_id 仍表示响应 ID，避免把请求关联误作续接 ID。timing 是可空本机测量快照，语义与记录诊断相同，不包含 Prompt/RPC/连接凭据。SSE 与非流统一来源与未知值；Responses 在整体 Body deadline 到达时发送 response.failed，序号继续本次流，不能发送逾期 completed。没有新增强制请求头或字段。
+
+M2/M4 门禁补强：catalog.observed_at 在实际刷新时保存，读取不随系统时钟变化重新推算。最终 completed 的 usage 先按来源/口径校验，再采用最近一次可信 request/last_turn 快照；累计/未知来源不能抹掉已报告本次用量。终态记录、扩展与标准 usage 保持一致，没有可信快照时均为 null。

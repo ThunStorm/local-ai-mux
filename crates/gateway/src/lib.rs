@@ -46,7 +46,7 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const AGENT_QUEUE_TIMEOUT: Duration = Duration::from_secs(30);
 const AGENT_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_BODY: usize = 1024 * 1024;
-type CatalogCache = Arc<Mutex<HashMap<String, (Instant, Vec<ModelDescriptor>)>>>;
+type CatalogCache = Arc<Mutex<HashMap<String, (Instant, i64, Vec<ModelDescriptor>)>>>;
 type AgentLane = Arc<Mutex<Option<tokio::time::Instant>>>;
 type AgentPermit = OwnedMutexGuard<Option<tokio::time::Instant>>;
 
@@ -226,13 +226,13 @@ impl GatewayState {
         self.catalog
             .lock()
             .await
-            .insert(id.to_owned(), (Instant::now(), models));
+            .insert(id.to_owned(), (Instant::now(), now(), models));
     }
     pub async fn invalidate_all_catalog(&self) {
         self.catalog
             .lock()
             .await
-            .retain(|_, (time, _)| time.elapsed() < Duration::from_secs(30));
+            .retain(|_, (time, _, _)| time.elapsed() < Duration::from_secs(30));
     }
     async fn available_candidates(&self) -> Vec<RouteCandidate> {
         let adapters = self.adapters.read().await.clone();
@@ -244,15 +244,15 @@ impl GatewayState {
             }
             // ponytail: one catalog lock serializes provider refreshes; use per-connection locks if measured latency requires it.
             let mut cache = self.catalog.lock().await;
-            let mut models = if let Some((_, models)) = cache
+            let mut models = if let Some((_, _, models)) = cache
                 .get(adapter.id())
-                .filter(|(time, _)| time.elapsed() < Duration::from_secs(300))
+                .filter(|(time, _, _)| time.elapsed() < Duration::from_secs(300))
             {
                 models.clone()
             } else {
                 match adapter.list_models().await {
                     Ok(models) => {
-                        cache.insert(adapter.id().into(), (Instant::now(), models.clone()));
+                        cache.insert(adapter.id().into(), (Instant::now(), now(), models.clone()));
                         models
                     }
                     Err(_) => {
@@ -264,7 +264,7 @@ impl GatewayState {
             for model in &mut models {
                 model.chat.expire_evidence(now());
             }
-            if let Some((_, cached)) = cache.get_mut(adapter.id()) {
+            if let Some((_, _, cached)) = cache.get_mut(adapter.id()) {
                 *cached = models.clone();
             }
             drop(cache);
@@ -674,14 +674,14 @@ async fn chat_models(State(state): State<GatewayState>, headers: HeaderMap) -> R
         }
         if let Some(model) = catalog
             .values()
-            .flat_map(|(_, models)| models)
+            .flat_map(|(_, _, models)| models)
             .find(|model| model.id == candidate.model_id)
         {
             let age = catalog
                 .get(adapter.id())
-                .map(|(at, _)| at.elapsed().as_secs())
+                .map(|(at, _, _)| at.elapsed().as_secs())
                 .unwrap_or(300);
-            let observed_at = now().saturating_sub(age as i64);
+            let observed_at = catalog.get(adapter.id()).map(|(_, at, _)| *at).unwrap_or(0);
             let runtime = state.connection_runtime_status(adapter.id()).await;
             data.push(serde_json::json!({"runtime":runtime,"catalog":{"observed_at":observed_at,"expires_at":observed_at+300,"ttl_seconds":300,"status":if age < 300 { "CURRENT" } else { "STALE" },"source":"adapter_public_catalog","live_verified":false},"id":model.id,"provider":model.provider_id,"stream":model.supports_streaming,"chat":model.chat,"connection_id":model.connection_id.as_deref().unwrap_or(adapter.id()),"adapter":adapter.id(),"identity_scope":"adapter_compat"}));
         }
@@ -911,7 +911,7 @@ async fn chat_inner(
         .lock()
         .await
         .get(&adapter_id)
-        .and_then(|(_, models)| models.iter().find(|model| model.id == actual_model))
+        .and_then(|(_, _, models)| models.iter().find(|model| model.id == actual_model))
         .cloned();
     let Some(descriptor) = descriptor else {
         return adapter_error(AdapterError::ModelUnavailable);
@@ -1073,7 +1073,7 @@ async fn chat_inner(
                     },
                     Ok(Some(Ok(StreamEvent::Usage(usage)))) if !completed => { metadata.usage = usage.validated(); call.metadata(&metadata); },
                     Ok(Some(Ok(StreamEvent::Completed(mut reported)))) if !completed => {
-                        reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported.validated(); call.metadata(&metadata); completed = true;
+                        reported = reported.validated(); reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported; call.metadata(&metadata); completed = true;
                     },
                     Ok(Some(Ok(_))) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Ok(None) => { if completed { route_state.breaker.success(&adapter_id); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },

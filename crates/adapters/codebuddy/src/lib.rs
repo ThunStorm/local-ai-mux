@@ -5,7 +5,7 @@ use localmux_adapter_sdk::{
 };
 use localmux_domain::{AdapterKind, CostMode, HealthStatus, ModelDescriptor};
 use serde_json::Value;
-use std::{env, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
+use std::{env, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{process::Command, sync::Mutex};
 
 pub struct CodeBuddyAdapter {

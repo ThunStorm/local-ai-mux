@@ -78,12 +78,19 @@ impl Adapter for Negotiated {
         })
     }
     async fn invoke_events(&self, request: NormalizedRequest) -> Result<EventStream, AdapterError> {
+        let cumulative_final = request.prompt == "cumulative-final";
         self.invoke(request).await?;
+        let mut final_metadata = metadata();
+        if cumulative_final {
+            let usage = final_metadata.usage.as_mut().unwrap();
+            usage.scope = "session_total".into();
+            usage.total_tokens = Some(999);
+        }
         Ok(Box::pin(stream::iter(vec![
             Ok(StreamEvent::Delta("partial answer".into())),
             Ok(StreamEvent::Usage(metadata().usage.unwrap())),
             Ok(StreamEvent::Usage(metadata().usage.unwrap())),
-            Ok(StreamEvent::Completed(metadata())),
+            Ok(StreamEvent::Completed(final_metadata)),
         ])))
     }
     async fn invoke_session_events(
@@ -373,5 +380,41 @@ async fn public_request_id_is_consistent_and_extension_has_a_fixed_byte_budget()
             assert_eq!(metadata["finish_source"], "provider_reported");
             assert!(metadata.to_string().len() <= 4096);
         }
+    }
+}
+
+#[tokio::test]
+async fn untrusted_final_usage_cannot_erase_the_last_valid_request_snapshot() {
+    let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+    state
+        .register(Arc::new(Negotiated(Arc::new(AtomicUsize::new(0)))))
+        .await;
+    let (_, key) = state
+        .create_key(&["chat:invoke", "responses:invoke"])
+        .await
+        .unwrap();
+    for endpoint in ["/v1/chat/completions", "/v1/responses"] {
+        let body = if endpoint.ends_with("responses") {
+            json!({"model":"negotiated/text","input":"cumulative-final","stream":true})
+        } else {
+            json!({"model":"negotiated/text","messages":[{"role":"user","content":"cumulative-final"}],"stream":true,"stream_options":{"include_usage":true}})
+        };
+        let response = router(state.clone())
+            .oneshot(post(&key, endpoint, body))
+            .await
+            .unwrap();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let text = std::str::from_utf8(&bytes).unwrap();
+        assert!(!text.contains("999"));
+        assert!(text.contains("\"total_tokens\":14"));
+        let record = localmux_storage::list_calls(&state.pool, &Default::default())
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(record.total_tokens, Some(14));
+        assert_eq!(
+            record.diagnostics.unwrap().usage_scope.as_deref(),
+            Some("request")
+        );
     }
 }

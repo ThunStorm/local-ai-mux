@@ -477,7 +477,7 @@ async fn create_inner(
                         yield Ok(event("response.output_text.delta", json!({"type":"response.output_text.delta","sequence_number":call.budget().next_sequence(),"item_id":message_id,"output_index":0,"content_index":0,"delta":delta})));
                                 },
                     Ok(StreamEvent::Usage(usage)) if !completed => { result.usage = usage.validated(); call.metadata(&result); },
-                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported.usage = reported.usage.or(result.usage.take()); result = reported.validated(); call.metadata(&result); completed = true; },
+                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported = reported.validated(); reported.usage = reported.usage.or(result.usage.take()); result = reported; call.metadata(&result); completed = true; },
                     Ok(_) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Err(kind) => {
                         super::breaker_error(&stream_state, context.adapter.id(), &kind);
