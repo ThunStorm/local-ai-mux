@@ -1071,9 +1071,9 @@ async fn chat_inner(
                         let chunk = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{"content":delta},"finish_reason":null}]});
                         yield Ok(Event::default().data(chunk.to_string()));
                     },
-                    Ok(Some(Ok(StreamEvent::Usage(usage)))) if !completed => { metadata.usage = Some(usage); call.metadata(&metadata); },
+                    Ok(Some(Ok(StreamEvent::Usage(usage)))) if !completed => { metadata.usage = usage.validated(); call.metadata(&metadata); },
                     Ok(Some(Ok(StreamEvent::Completed(mut reported)))) if !completed => {
-                        reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported; call.metadata(&metadata); completed = true;
+                        reported.usage = reported.usage.or(metadata.usage.take()); metadata = reported.validated(); call.metadata(&metadata); completed = true;
                     },
                     Ok(Some(Ok(_))) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Ok(None) => { if completed { route_state.breaker.success(&adapter_id); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
@@ -1085,13 +1085,13 @@ async fn chat_inner(
             drop(adapter_run);
             if let Some(code) = failure {
                 call.fail(code);
-                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"public_interface","retryable":false,"request_id":id}}).to_string()));
+                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"public_interface","retryable":false,"request_id":call.budget().request_id}}).to_string()));
             } else {
                 call.result(&metadata);
-                let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":metadata.finish_reason.openai()}],"localmux":wire_metadata(&metadata, &id, &model, normalization.as_deref())});
+                let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":metadata.finish_reason.openai()}],"localmux":wire_metadata(&metadata, &id, &model, normalization.as_deref(), &call.budget())});
                 yield Ok(Event::default().data(last.to_string()));
                 if include_usage {
-                    let usage = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[],"usage":wire_usage(metadata.usage.as_ref()),"localmux":wire_metadata(&metadata,&id,&model,normalization.as_deref())});
+                    let usage = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[],"usage":wire_usage(metadata.usage.as_ref()),"localmux":wire_metadata(&metadata,&id,&model,normalization.as_deref(), &call.budget())});
                     yield Ok(Event::default().data(usage.to_string()));
                 }
             }
@@ -1101,7 +1101,7 @@ async fn chat_inner(
             .keep_alive(KeepAlive::default())
             .into_response();
     }
-    let response = match tokio::time::timeout_at(deadline, adapter.invoke(normalized)).await {
+    let mut response = match tokio::time::timeout_at(deadline, adapter.invoke(normalized)).await {
         Ok(Ok(response)) => {
             state.breaker.success(&adapter_id);
             response
@@ -1118,6 +1118,7 @@ async fn chat_inner(
             )
         }
     };
+    response.metadata = response.metadata.validated();
     drop(adapter_timer);
     drop(adapter_run);
     if call.answer(&response.text).await.is_err() {
@@ -1130,6 +1131,7 @@ async fn chat_inner(
             &id,
             &actual_model,
             normalization.as_deref(),
+            &call.budget(),
         ),
         id,
         object: "chat.completion",
@@ -1148,6 +1150,37 @@ async fn chat_inner(
     .into_response()
 }
 fn protocol_error(code: &str, param: &str, reason: &str, layer: &str) -> Response {
+    let param = match param {
+        "messages"
+        | "temperature"
+        | "top_p"
+        | "max_tokens"
+        | "max_completion_tokens"
+        | "reasoning_effort"
+        | "response_format"
+        | "stream"
+        | "stream_options" => param,
+        _ => "parameter",
+    };
+    let reason = match reason {
+        "conflict"
+        | "out_of_range"
+        | "not_implemented"
+        | "unknown_constraints"
+        | "guarantee_unverified"
+        | "non_leading_instruction"
+        | "role_priority_unmapped"
+        | "role_or_history_unmapped"
+        | "unsupported"
+        | "stream_required"
+        | "malformed_format"
+        | "evidence_expired_or_undated" => reason,
+        _ => "unverified_adapter_diagnostic",
+    };
+    let layer = match layer {
+        "gateway" | "adapter" | "public_interface" | "model" | "account" | "unknown" => layer,
+        _ => "unknown",
+    };
     (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":{"message":"Request cannot be honored by the selected public interface","type":"localmux_error","code":code,"error_code":code,"param":param,"reason_code":reason,"limiting_layer":layer,"retryable":false,"request_id":Uuid::new_v4().to_string()}}))).into_response()
 }
 fn wire_usage(usage: Option<&TokenUsage>) -> Option<Usage> {
@@ -1162,18 +1195,19 @@ fn wire_metadata(
     id: &str,
     resolved_model: &str,
     normalization: Option<&str>,
+    budget: &execution::ExecutionBudget,
 ) -> serde_json::Value {
-    let mut value = serde_json::to_value(metadata).unwrap_or_default();
-    value["request_id"] = serde_json::json!(id);
-    value["resolved_model"] = serde_json::json!(resolved_model);
-    value["normalization"] = serde_json::json!(normalization.or(metadata.normalization.as_deref()));
-    value["usage_status"] = serde_json::json!(if metadata.usage.is_some() {
-        "provider_reported"
-    } else {
-        "unknown"
-    });
-    value["cancellation_guarantee"] = serde_json::json!("local_receive_only");
-    value
+    let metadata = metadata.clone().validated();
+    serde_json::json!({
+        "request_id":budget.request_id, "response_id":id,
+        "resolved_model":localmux_adapter_sdk::public_model_id(resolved_model).then_some(resolved_model),
+        "actual_model":metadata.actual_model, "actual_model_source":metadata.actual_model_source,
+        "finish_reason":metadata.finish_reason, "finish_source":metadata.finish_source,
+        "usage":metadata.usage, "usage_status":if metadata.usage.is_some() { "provider_reported" } else { "unknown" },
+        "normalization":normalization.filter(|v| *v == "leading_instructions_v1").or(metadata.normalization.as_deref()),
+        "cancellation_guarantee":"local_receive_only", "upstream_cancel_verified":"UNKNOWN",
+        "timing":budget.snapshot(),
+    })
 }
 fn connection_cooldown(state: &GatewayState, adapter_id: &str) -> Option<Response> {
     (!state.breaker.available(adapter_id, Instant::now())).then(|| {

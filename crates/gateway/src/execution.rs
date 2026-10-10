@@ -8,6 +8,8 @@ pub(crate) struct ExecutionBudget {
     pub accepted: Instant,
     pub deadline: Instant,
     pub request_id: String,
+    pub response_id: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    pub response_sequence: std::sync::Arc<std::sync::atomic::AtomicU64>,
     pub metrics: std::sync::Arc<std::sync::Mutex<localmux_storage::CallDiagnostics>>,
 }
 impl Default for ExecutionBudget {
@@ -17,6 +19,8 @@ impl Default for ExecutionBudget {
             accepted,
             deadline: accepted + super::REQUEST_TIMEOUT,
             request_id: format!("req_{}", uuid::Uuid::new_v4().simple()),
+            response_id: Default::default(),
+            response_sequence: Default::default(),
             metrics: std::sync::Arc::new(std::sync::Mutex::new(
                 localmux_storage::CallDiagnostics {
                     accepted_at: Some(super::now()),
@@ -28,6 +32,10 @@ impl Default for ExecutionBudget {
     }
 }
 impl ExecutionBudget {
+    pub fn next_sequence(&self) -> u64 {
+        self.response_sequence
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
     pub fn elapsed_ms(&self) -> u64 {
         self.accepted.elapsed().as_millis().min(u64::MAX as u128) as u64
     }
@@ -84,6 +92,7 @@ pub(crate) async fn admit(
     next: Next,
 ) -> Response {
     let budget = ExecutionBudget::default();
+    let responses = request.uri().path() == "/v1/responses";
     let run = (request.method() == axum::http::Method::POST).then(|| state.begin_run());
     request.extensions_mut().insert(budget.clone());
     let mut response = match tokio::time::timeout_at(budget.deadline, next.run(request)).await {
@@ -127,7 +136,11 @@ pub(crate) async fn admit(
                 Err(_) => {
                     drop(data);
                         let failure = serde_json::json!({"error":{"message":"Request deadline exceeded","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","reason_code":"overall_deadline","limiting_layer":"gateway","retryable":false,"request_id":budget.request_id}});
-                        yield Ok(axum::body::Bytes::from(format!("data: {}\n\n", failure)));
+                        let frame = if responses {
+                        let value = serde_json::json!({"type":"response.failed","sequence_number":budget.next_sequence(),"response":{"id":budget.response_id.lock().unwrap().clone(),"object":"response","status":"failed","output":[],"error":failure["error"]}});
+                        format!("event: response.failed\ndata: {}\n\n", value)
+                    } else { format!("data: {}\n\ndata: [DONE]\n\n", failure) };
+                    yield Ok(axum::body::Bytes::from(frame));
                     break;
                 }
             }

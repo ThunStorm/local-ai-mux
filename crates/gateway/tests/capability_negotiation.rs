@@ -34,6 +34,8 @@ fn metadata() -> ResponseMetadata {
             scope: "request".into(),
             ..Default::default()
         }),
+        actual_model_source: Some("provider_reported".into()),
+        finish_source: Some("provider_reported".into()),
         actual_model: Some("reported-upstream".into()),
         ..Default::default()
     }
@@ -319,4 +321,57 @@ async fn stale_evidence_does_not_advertise_parameters_and_catalog_refresh_restor
         refreshed["data"][0]["chat"]["details"]["system"]["freshness"],
         "CURRENT"
     );
+}
+
+#[tokio::test]
+async fn public_request_id_is_consistent_and_extension_has_a_fixed_byte_budget() {
+    for stream in [false, true] {
+        let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        state
+            .register(Arc::new(Negotiated(Arc::new(AtomicUsize::new(0)))))
+            .await;
+        let (_, key) = state
+            .create_key(&["chat:invoke", "responses:invoke"])
+            .await
+            .unwrap();
+        for endpoint in ["/v1/chat/completions", "/v1/responses"] {
+            let body = if endpoint.ends_with("responses") {
+                json!({"model":"negotiated/text","input":"synthetic","stream":stream})
+            } else {
+                json!({"model":"negotiated/text","messages":[{"role":"user","content":"synthetic"}],"stream":stream})
+            };
+            let response = router(state.clone())
+                .oneshot(post(&key, endpoint, body))
+                .await
+                .unwrap();
+            let request_id = response.headers()["X-Request-ID"]
+                .to_str()
+                .unwrap()
+                .to_owned();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            let frames: Vec<Value> = if stream {
+                std::str::from_utf8(&bytes)
+                    .unwrap()
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("data: "))
+                    .filter(|line| *line != "[DONE]")
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect()
+            } else {
+                vec![serde_json::from_slice(&bytes).unwrap()]
+            };
+            let metadata = frames
+                .iter()
+                .find_map(|value| {
+                    value
+                        .get("localmux")
+                        .or_else(|| value["response"].get("localmux"))
+                })
+                .unwrap();
+            assert_eq!(metadata["request_id"], request_id);
+            assert_eq!(metadata["actual_model_source"], "provider_reported");
+            assert_eq!(metadata["finish_source"], "provider_reported");
+            assert!(metadata.to_string().len() <= 4096);
+        }
+    }
 }

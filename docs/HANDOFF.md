@@ -1,5 +1,7 @@
 # 交接记录
 
+2026-10-10 Gateway 可靠性 M4：Chat/Responses/SSE 共用来源校验，localmux 固定键/4096字节预算，标准响应ID与入站关联ID分开。HTTP/Codex 添加可信 source；无来源或累计用量、型号自述、未知 finish 不广告为事实。参数错误词表脱敏；Responses Body deadline 发 failed 且序号连续。针对性 Gateway/SDK/Codex 离线回归通过，官方 SDK 全矩阵接续 M6；无真实调用和新增迁移。
+
 2026-10-10 Gateway 可靠性 M3：0013 可空有界诊断及既有记录详情/连接状态/能力依据面板已实现。队列25秒+Adapter10秒分别测量；云端执行、非流首字及远端取消未知。旧记录不回填，默认正文关闭、store:false 保持；迁移需一致备份，旧程序回滚需匹配 DB。Rust/前端验证及 Playwright+Edge 合成 IPC 的960/800/760/1120、浅深/旧数据/忙碌/过期证据已核对，浏览器控制台无错误；真实 Provider/Windows 原生未实测。
 
 2026-10-10 Gateway 可靠性 M2：沿用 schema v2 与五分钟目录，添加证据时效/未知理由；过期角色/参数支持降 UNKNOWN，型号保留，刷新当前目录恢复契约证据但 live_verified 仍 false。无迁移或真实调用；旧 Key 过滤及参数拒绝回归保留。

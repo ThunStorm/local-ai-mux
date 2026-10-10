@@ -239,14 +239,15 @@ async fn context(
 }
 
 fn response_object(
-    id: &str,
-    message_id: &str,
+    ids: (&str, &str),
     created: i64,
     model: &str,
     response: &NormalizedResponse,
     previous: Option<&str>,
     metadata: &Value,
+    budget: &super::execution::ExecutionBudget,
 ) -> Value {
+    let (id, message_id) = ids;
     let result = &response.metadata;
     let text = &response.text;
     let incomplete = matches!(
@@ -257,7 +258,7 @@ fn response_object(
     json!({"id":id,"object":"response","created_at":created,"status":if incomplete { "incomplete" } else { "completed" },"error":null,"incomplete_details":if incomplete { json!({"reason": match result.finish_reason { FinishReason::Length => "max_output_tokens", FinishReason::ContentFilter => "content_filter", _ => "cancelled" }}) } else { Value::Null },
         "model":model,"previous_response_id":previous,"metadata":metadata,
         "output":[{"id":message_id,"type":"message","status":if incomplete { "incomplete" } else { "completed" },"role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}],
-        "output_text":text,"usage":usage,"localmux":super::wire_metadata(result,id,model,None)})
+        "output_text":text,"usage":usage,"localmux":super::wire_metadata(result,id,model,None,budget)})
 }
 fn event(name: &str, data: Value) -> Event {
     Event::default().event(name).data(data.to_string())
@@ -451,13 +452,9 @@ async fn create_inner(
             let _permit = permit;
             let mut provider_stream = session.stream;
             let mut text = String::new();
-            let mut sequence = 0_u64;
-            yield Ok::<Event, Infallible>(event("response.created", json!({"type":"response.created","sequence_number":sequence,"response":{"id":response_id,"object":"response","created_at":created,"status":"in_progress","model":context.model,"output":[]}})));
-            sequence += 1;
-            yield Ok(event("response.output_item.added", json!({"type":"response.output_item.added","sequence_number":sequence,"output_index":0,"item":{"id":message_id,"type":"message","status":"in_progress","role":"assistant","content":[]}})));
-            sequence += 1;
-            yield Ok(event("response.content_part.added", json!({"type":"response.content_part.added","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}})));
-            sequence += 1;
+            yield Ok::<Event, Infallible>(event("response.created", json!({"type":"response.created","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"object":"response","created_at":created,"status":"in_progress","model":context.model,"output":[]}})));
+            yield Ok(event("response.output_item.added", json!({"type":"response.output_item.added","sequence_number":call.budget().next_sequence(),"output_index":0,"item":{"id":message_id,"type":"message","status":"in_progress","role":"assistant","content":[]}})));
+            yield Ok(event("response.content_part.added", json!({"type":"response.content_part.added","sequence_number":call.budget().next_sequence(),"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}})));
             let mut failure = None;
             let mut result = ResponseMetadata::default();
             let mut completed = false;
@@ -477,11 +474,10 @@ async fn create_inner(
                         if text.len() + delta.len() > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
                         if call.answer(&delta).await.is_err() { failure = Some("LMX_INTERNAL_ERROR"); break; }
                         text.push_str(&delta);
-                        yield Ok(event("response.output_text.delta", json!({"type":"response.output_text.delta","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"delta":delta})));
-                        sequence += 1;
-                    },
-                    Ok(StreamEvent::Usage(usage)) if !completed => { result.usage = Some(usage); call.metadata(&result); },
-                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported.usage = reported.usage.or(result.usage.take()); result = reported; call.metadata(&result); completed = true; },
+                        yield Ok(event("response.output_text.delta", json!({"type":"response.output_text.delta","sequence_number":call.budget().next_sequence(),"item_id":message_id,"output_index":0,"content_index":0,"delta":delta})));
+                                },
+                    Ok(StreamEvent::Usage(usage)) if !completed => { result.usage = usage.validated(); call.metadata(&result); },
+                    Ok(StreamEvent::Completed(mut reported)) if !completed => { reported.usage = reported.usage.or(result.usage.take()); result = reported.validated(); call.metadata(&result); completed = true; },
                     Ok(_) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Err(kind) => {
                         super::breaker_error(&stream_state, context.adapter.id(), &kind);
@@ -493,25 +489,22 @@ async fn create_inner(
             drop(adapter_run);
             if let Some(code) = failure {
                 call.fail(code);
-                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed"}}})));
+                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed","request_id":call.budget().request_id,"param":null,"limiting_layer":"public_interface","retryable":false}}})));
                 return;
             }
             let native_id = session.provider_session_id.lock().await.clone().or(context.provider_session_id);
             if store && !matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) && localmux_storage::save_response_mapping(&pool, localmux_storage::NewResponseMapping { owner_key_id: &owner_key_id, conversation_id: &context.conversation_id, response_id: &response_id, model_id: &context.model, adapter_id: context.adapter.id(), provider_session_id: native_id.as_deref(), previous_response_id: previous.as_deref(), created_at: created }).await.is_err() {
                 call.fail("LMX_INTERNAL_ERROR");
-                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":"LMX_INTERNAL_ERROR","message":"Session persistence failed"}}})));
+                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"status":"failed","error":{"code":"LMX_INTERNAL_ERROR","message":"Session persistence failed"}}})));
                 return;
             }
             call.result(&result);
-            yield Ok(event("response.output_text.done", json!({"type":"response.output_text.done","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"text":text})));
-            sequence += 1;
-            yield Ok(event("response.content_part.done", json!({"type":"response.content_part.done","sequence_number":sequence,"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":text,"annotations":[]}})));
-            sequence += 1;
-            yield Ok(event("response.output_item.done", json!({"type":"response.output_item.done","sequence_number":sequence,"output_index":0,"item":{"id":message_id,"type":"message","status":if matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) { "incomplete" } else { "completed" },"role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}})));
-            sequence += 1;
-            let object = response_object(&response_id, &message_id, created, &context.model, &NormalizedResponse { text, provider_session_id: None, metadata: result }, previous.as_deref(), &metadata);
+            yield Ok(event("response.output_text.done", json!({"type":"response.output_text.done","sequence_number":call.budget().next_sequence(),"item_id":message_id,"output_index":0,"content_index":0,"text":text})));
+            yield Ok(event("response.content_part.done", json!({"type":"response.content_part.done","sequence_number":call.budget().next_sequence(),"item_id":message_id,"output_index":0,"content_index":0,"part":{"type":"output_text","text":text,"annotations":[]}})));
+            yield Ok(event("response.output_item.done", json!({"type":"response.output_item.done","sequence_number":call.budget().next_sequence(),"output_index":0,"item":{"id":message_id,"type":"message","status":if matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) { "incomplete" } else { "completed" },"role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}})));
+            let object = response_object((&response_id, &message_id), created, &context.model, &NormalizedResponse { text, provider_session_id: None, metadata: result }, previous.as_deref(), &metadata, &call.budget());
             let terminal = if object["status"] == "incomplete" { "response.incomplete" } else { "response.completed" };
-            yield Ok(event(terminal, json!({"type":terminal,"sequence_number":sequence,"response":object})));
+            yield Ok(event(terminal, json!({"type":terminal,"sequence_number":call.budget().next_sequence(),"response":object})));
         };
         return Sse::new(events)
             .keep_alive(axum::response::sse::KeepAlive::default())
@@ -535,7 +528,7 @@ async fn create_inner(
             )
         }
     };
-    let result = match result {
+    let mut result = match result {
         Ok(result) => result,
         Err(AdapterError::Unsupported) if context.provider_session_id.is_some() => {
             return error(
@@ -549,6 +542,7 @@ async fn create_inner(
             return adapter_error(kind);
         }
     };
+    result.metadata = result.metadata.validated();
     drop(adapter_timer);
     drop(adapter_run);
     let native_id = result
@@ -587,13 +581,13 @@ async fn create_inner(
     }
     call.result(&result.metadata);
     Json(response_object(
-        &response_id,
-        &message_id,
+        (&response_id, &message_id),
         created,
         &context.model,
         &result,
         request.previous_response_id.as_deref(),
         &metadata,
+        &call.budget(),
     ))
     .into_response()
 }

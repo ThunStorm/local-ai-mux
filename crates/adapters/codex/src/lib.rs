@@ -159,7 +159,7 @@ impl CodexAdapter {
                 let mut pending = pending.into_iter();
                 let mut saw_delta = false;
                 let mut final_text = String::new();
-                let mut metadata = ResponseMetadata { actual_model, normalization, ..Default::default() };
+                let mut metadata = ResponseMetadata { actual_model, actual_model_source: Some("app_server_thread".into()), normalization, ..Default::default() };
                 loop {
                     let event = match pending.next() { Some(event) => event, None => process.read(localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT).await? };
                     if event["params"]["threadId"].as_str().is_some_and(|value| value != id) { continue; }
@@ -177,13 +177,14 @@ impl CodexAdapter {
                                 metadata.usage = Some(usage.clone()); yield StreamEvent::Usage(usage);
                             }
                         },
-                        Some("model/rerouted") => { metadata.actual_model = event["params"]["toModel"].as_str().map(str::to_owned); },
+                        Some("model/rerouted") => { metadata.actual_model = event["params"]["toModel"].as_str().map(str::to_owned); metadata.actual_model_source = Some("app_server_rerouted".into()); },
                         Some("item/started") if event["params"]["item"]["type"].as_str().is_some_and(|kind| !matches!(kind, "agentMessage" | "userMessage" | "reasoning")) => Err(AdapterError::Unsupported)?,
                         Some("turn/completed") => {
-                            if event["params"]["turn"]["status"] == "interrupted" { metadata.finish_reason = FinishReason::Cancelled; yield StreamEvent::Completed(metadata); break; }
+                            if event["params"]["turn"]["status"] == "interrupted" { metadata.finish_reason = FinishReason::Cancelled; metadata.finish_source = Some("provider_reported".into()); yield StreamEvent::Completed(metadata); break; }
                             if event["params"]["turn"]["status"] != "completed" { Err(map_turn_error(&event["params"]["turn"]["error"]))?; }
                             if !saw_delta && !final_text.is_empty() { yield StreamEvent::Delta(final_text); }
                             metadata.finish_reason = FinishReason::from_public(event["params"]["turn"]["finishReason"].as_str());
+                            metadata.finish_source = (metadata.finish_reason != FinishReason::Unknown).then(|| "provider_reported".into());
                             yield StreamEvent::Completed(metadata);
                             break;
                         },

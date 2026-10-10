@@ -233,8 +233,8 @@ impl Adapter for HttpProvider {
                         let value: Value = serde_json::from_str(data).map_err(|_| AdapterError::ProcessFailed)?;
                         if value.get("error").is_some() { Err(AdapterError::ProcessFailed)?; }
                         if let Some(usage) = http_usage(&value["usage"]) { metadata.usage = Some(usage.clone()); yield StreamEvent::Usage(usage); }
-                        if let Some(model) = value["model"].as_str() { metadata.actual_model = Some(model.to_owned()); }
-                        if let Some(reason) = value["choices"][0]["finish_reason"].as_str() { metadata.finish_reason = FinishReason::from_public(Some(reason)); }
+                        if let Some(model) = value["model"].as_str() { metadata.actual_model = Some(model.to_owned()); metadata.actual_model_source = Some("provider_reported".into()); }
+                        if let Some(reason) = value["choices"][0]["finish_reason"].as_str() { metadata.finish_reason = FinishReason::from_public(Some(reason)); metadata.finish_source = Some("provider_reported".into()); }
                         if let Some(delta) = value["choices"][0]["delta"]["content"].as_str() { yield StreamEvent::Delta(delta.to_owned()); }
                     }
                 }
@@ -268,6 +268,8 @@ fn http_metadata(value: &Value) -> ResponseMetadata {
         finish_reason: FinishReason::from_public(value["choices"][0]["finish_reason"].as_str()),
         usage: http_usage(&value["usage"]),
         actual_model: value["model"].as_str().map(str::to_owned),
+        actual_model_source: Some("provider_reported".into()),
+        finish_source: Some("provider_reported".into()),
         ..Default::default()
     }
 }

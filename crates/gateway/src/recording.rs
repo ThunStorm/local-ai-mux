@@ -114,6 +114,9 @@ impl Call {
             .is_some_and(|record| record.lock().unwrap().status != "in_progress")
     }
     pub fn target(&self, model: &str, adapter: &str, response: &str, conversation: Option<&str>) {
+        if !response.is_empty() {
+            *self.3.response_id.lock().unwrap() = Some(response.into());
+        }
         if let Some(record) = &self.0 {
             let mut record = record.lock().unwrap();
             record.resolved_model = Some(safe_model(model));
@@ -125,7 +128,10 @@ impl Call {
         }
     }
     pub fn metadata(&self, metadata: &ResponseMetadata) {
+        let metadata = metadata.clone().validated();
         let mut metrics = self.3.metrics.lock().unwrap();
+        metrics.finish_source = metadata.finish_source.clone();
+        metrics.actual_model_source = metadata.actual_model_source.clone();
         if let Some(usage) = &metadata.usage {
             metrics.usage_source =
                 (usage.source == "provider_reported").then(|| "provider_reported".into());
@@ -154,6 +160,7 @@ impl Call {
         }
     }
     pub fn result(&self, metadata: &ResponseMetadata) {
+        let metadata = metadata.clone().validated();
         if self.budget().expired() {
             self.fail("LMX_PROCESS_TIMEOUT");
             return;
@@ -161,7 +168,7 @@ impl Call {
         if self.terminal() {
             return;
         }
-        self.metadata(metadata);
+        self.metadata(&metadata);
         let mut metrics = self.3.metrics.lock().unwrap();
         metrics.outcome = Some(
             match metadata.finish_reason {
@@ -374,8 +381,23 @@ impl CallGuard {
                 .unwrap_or_default();
             let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
             if let Some(reason) = value["error"]["reason_code"].as_str() {
-                if reason.len() <= 80 && reason.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
-                {
+                if matches!(
+                    reason,
+                    "conflict"
+                        | "out_of_range"
+                        | "not_implemented"
+                        | "unknown_constraints"
+                        | "guarantee_unverified"
+                        | "non_leading_instruction"
+                        | "role_priority_unmapped"
+                        | "role_or_history_unmapped"
+                        | "unsupported"
+                        | "stream_required"
+                        | "malformed_format"
+                        | "evidence_expired_or_undated"
+                        | "agent_queue_timeout"
+                        | "overall_deadline"
+                ) {
                     self.call.3.metrics.lock().unwrap().reason_code = Some(reason.into());
                 }
             }

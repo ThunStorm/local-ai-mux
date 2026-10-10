@@ -250,6 +250,49 @@ pub struct ResponseMetadata {
     pub usage: Option<TokenUsage>,
     pub actual_model: Option<String>,
     pub normalization: Option<String>,
+    pub actual_model_source: Option<String>,
+    pub finish_source: Option<String>,
+}
+impl TokenUsage {
+    pub fn validated(self) -> Option<Self> {
+        (self.source == "provider_reported"
+            && matches!(self.scope.as_str(), "request" | "last_turn"))
+        .then_some(self)
+    }
+}
+/// Whitelisted provenance and bounded identifiers, never raw CLI events or model self-report prose.
+impl ResponseMetadata {
+    pub fn validated(mut self) -> Self {
+        self.usage = self.usage.and_then(TokenUsage::validated);
+        if self.finish_source.as_deref() != Some("provider_reported") {
+            self.finish_reason = FinishReason::Unknown;
+            self.finish_source = None;
+        }
+        if self.finish_reason == FinishReason::Unknown {
+            self.finish_source = None;
+        }
+        if !matches!(
+            self.actual_model_source.as_deref(),
+            Some("provider_reported" | "app_server_thread" | "app_server_rerouted")
+        ) || !self.actual_model.as_deref().is_some_and(public_model_id)
+        {
+            self.actual_model = None;
+            self.actual_model_source = None;
+        }
+        self.normalization = self
+            .normalization
+            .filter(|v| v == "leading_instructions_v1");
+        self
+    }
+}
+pub fn public_model_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 160
+        && !value.starts_with("lmx_")
+        && !value.starts_with("sk-")
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/_.:-".contains(&b))
 }
 #[derive(Clone, Debug)]
 pub enum StreamEvent {
@@ -492,5 +535,39 @@ mod tests {
             request.single_user_prompt(),
             Err(AdapterError::UnsupportedMessages)
         ));
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+    #[test]
+    fn unverified_cumulative_or_oversized_metadata_is_not_advertised_as_a_fact() {
+        let metadata = ResponseMetadata {
+            finish_reason: FinishReason::Stop,
+            actual_model: Some("I am a better model".repeat(1000)),
+            normalization: Some("Bearer PRIVATE".into()),
+            usage: Some(TokenUsage {
+                total_tokens: Some(999),
+                source: "provider_reported".into(),
+                scope: "session_total".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .validated();
+        assert_eq!(metadata.finish_reason, FinishReason::Unknown);
+        assert!(
+            metadata.actual_model.is_none()
+                && metadata.usage.is_none()
+                && metadata.normalization.is_none()
+        );
+        let metadata = ResponseMetadata {
+            actual_model: Some("sk-secret".into()),
+            actual_model_source: Some("provider_reported".into()),
+            ..Default::default()
+        }
+        .validated();
+        assert!(metadata.actual_model.is_none());
     }
 }

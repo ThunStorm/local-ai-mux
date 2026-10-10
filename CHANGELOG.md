@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Validate per-request metadata provenance, reject cumulative/unverified usage and bounded-model self reports, and cap the fixed localmux extension at 4096 bytes; correlate response/stream errors with X-Request-ID while preserving standard response IDs.
+
 - Add migration 0013 with optional bounded call diagnostics, independent queue/spacing/adapter timings and request correlation; retain opt-in body recording, store:false and legacy nulls. Extend existing history, local connection state and capability evidence panels.
 
 - Add compatible v2 capability/catalog freshness and evidence expiry; downgrade stale effective claims to UNKNOWN without hiding models or upgrading fixture evidence to live verification.

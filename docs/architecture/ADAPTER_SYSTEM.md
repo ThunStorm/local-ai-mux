@@ -24,3 +24,5 @@ Codex 子进程在 macOS 缺少显式代理环境时遵从现有系统固定 HTT
 2026-10-08：CLI/Codex 等待输出事件的空闲上限为 180 秒；Gateway 另有 600 秒总期与 Agent 连接串行，取代早期 Gateway 120 秒整体等待。AdapterError::Timeout 与 ProcessFailed 分开，映射 LMX_PROCESS_TIMEOUT；错误 result 的额度/鉴权分类只在内存进行，不透传 stdout/stderr。取消 drop 终止本机句柄，但远端取消/消费仍待真实验收。连接锁覆盖 Chat、Responses、模型验证；详情见[Streaming](../api/STREAMING.md#2026-10-08-cli-调用期限与并发修订)。
 
 2026-10-10 M2：复用五分钟目录缓存和 CapabilityDetail；公开版本/fixture 观察增加到期时间与未知理由。缓存刷新或显式失效后重新读取当前公开目录；过期支持证据转 UNKNOWN，不根据型号名称、答案自述或同族网页推断参数支持。读取公开目录不触发生成，不借 catalog 观察标记 live_verified。v2 新字段可缺省，无迁移；回滚移除兼容扩展即可。
+
+2026-10-10 M4：ResponseMetadata 增加可选 actual_model_source/finish_source，Gateway 对来源、型号长度/字符、规范化名称及 usage source/scope 做白名单检查。HTTP 标准元数据来源为 provider_reported；Codex thread model 与 rerouted 分别登记 app_server_thread/app_server_rerouted，未知 finish 仍 null。第三方 Adapter 未标来源的 stop/model/usage 不得成为对外已知事实；协议 Completed 仍可以证明接收结束，无需伪造 stop。无新增数据库迁移，旧标准客户端可继续忽略 localmux。

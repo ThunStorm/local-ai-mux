@@ -26,8 +26,12 @@ fn metadata(prompt: &str) -> ResponseMetadata {
             input_tokens: Some(2),
             output_tokens: Some(3),
             total_tokens: Some(5),
+            source: "provider_reported".into(),
+            scope: "request".into(),
             ..Default::default()
         }),
+        actual_model_source: Some("provider_reported".into()),
+        finish_source: Some("provider_reported".into()),
         actual_model: Some("reported/model".into()),
         ..Default::default()
     }
