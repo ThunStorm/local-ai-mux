@@ -34,3 +34,13 @@ LocalMux Conversation 与 Provider 原生 session 分开存储。`conversations`
 详情按需读取正文，列表不带大文本；支持完整角色列表、回答、录制范围标记与刷新，长文本滚动查看而不截断。旧记录明确显示未录正文。文本按 React 纯文本显示，不能执行返回的 HTML。设置保存结果不确定时显示未知并提供重新读取，不以本机乐观状态猜测真实录制状态。
 
 “全部”指 LocalMux 在本轮接口中实际收到的可见对话文本；不扫描第三方历史，不抓取上游未返回的内部推理、工具过程或私有日志。Responses 各轮仍按原 conversation_id 关联；新调用携带的历史可被本轮录下，但不反向改写旧记录。
+
+## 有界运行诊断（2026-10-10 / M3）
+
+`0013` 在既有 call_records 添加可空 request_id 和 diagnostics JSON（固定类型、最多 8192 字节）；旧行保持 NULL，不回填。入站关联 ID 由 Gateway 生成，不能从客户端头注入。阶段时间使用单调时钟，accepted_at 用 Unix 秒：auth_route_ms 是入站到 lane 前的本机预检；queue_wait_ms 只测锁等待，interval_wait_ms 单测启动间隔；adapter_startup_ms 是流方法到返回可接收句柄的本机时间，adapter_ms 是调用/接收直到 EOF/异常的本机耗时，含 startup，不代表纯云端推理；first_output_ms 只在 SSE 的非空文字 delta 可观测时填，非流首字与 model_execution_ms 未观测则 NULL。total_elapsed_ms/旧 elapsed_ms 均从 admission 到终态快照、在数据库终态提交之前测量。response_finalize_ms 的终态写入耗时仅在内存完成后可得，持久快照为 NULL，不补 0。
+
+request_bytes 是 Gateway 收到的 JSON Body 字节；非流 response_bytes 是已编码 Body，SSE 是到首个终态帧为止的本机 Body 字节前缀（scope=through_first_terminal_frame），不当作完整 socket 传输/消费端确认。output_text_bytes 是已接收文字字节。HTTP 状态、固定 reason/outcome、用量来源/口径、规范化、是否录正文与取消请求分别记录；取消远端可证性始终 UNKNOWN。规范化可以与完成/失败共存，DIRECT_COMPLETED 只指正常接收终态，不推断模型 stop。store:false 完全绕过元数据和正文，包括新诊断，无新 telemetry 表；prompt、RPC、原始错误、凭据和参数均不在诊断中。
+
+本机 IPC 连接状态只根据已注册 Adapter 的文件/健康、lane 占用、执行计数及冷却得出 ACTIVE/IDLE/BUSY/COOLDOWN/UNAVAILABLE，含来源/观测时间；不自动运行模型或扩大授权。HTTP 能力目录只对 Key 已可见型号附带本机状态。客户端应把超过 30 秒的 GUI 状态视为过期，空闲不是账户/型号推理通过。
+
+回滚需要先停止且确认任务为 0，保留升级后 DB/正文备份，再恢复 M3 前 DB 与匹配旧程序；旧 SQLx 程序不能直接打开含 0013 的数据库。不要在用户数据库删列/篡改迁移账本，升级后新增记录先保留。

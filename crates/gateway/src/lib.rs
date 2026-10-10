@@ -61,6 +61,19 @@ pub struct GatewayState {
     limiter: Arc<KeyRateLimiter>,
     active_runs: Arc<AtomicUsize>,
     agent_lanes: Arc<Mutex<HashMap<String, AgentLane>>>,
+    adapter_runs: Arc<std::sync::Mutex<HashMap<String, usize>>>,
+}
+struct AdapterRun(Arc<std::sync::Mutex<HashMap<String, usize>>>, String);
+impl Drop for AdapterRun {
+    fn drop(&mut self) {
+        let mut runs = self.0.lock().unwrap();
+        if let Some(n) = runs.get_mut(&self.1) {
+            *n -= 1;
+            if *n == 0 {
+                runs.remove(&self.1);
+            }
+        }
+    }
 }
 struct ActiveRun(Arc<AtomicUsize>);
 impl Drop for ActiveRun {
@@ -80,6 +93,7 @@ impl GatewayState {
             limiter: Arc::new(KeyRateLimiter::default()),
             active_runs: Arc::new(AtomicUsize::new(0)),
             agent_lanes: Arc::new(Mutex::new(HashMap::new())),
+            adapter_runs: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
     pub fn mock(pool: SqlitePool) -> Self {
@@ -96,6 +110,53 @@ impl GatewayState {
     }
     pub fn warning_count(&self) -> usize {
         self.breaker.open_count(Instant::now())
+    }
+    fn begin_adapter(&self, id: &str) -> AdapterRun {
+        *self
+            .adapter_runs
+            .lock()
+            .unwrap()
+            .entry(id.into())
+            .or_default() += 1;
+        AdapterRun(self.adapter_runs.clone(), id.into())
+    }
+    /// Local activity/health only; never probes a model or reads private account state.
+    pub async fn connection_runtime_status(&self, id: &str) -> serde_json::Value {
+        let adapter = self
+            .adapters
+            .read()
+            .await
+            .iter()
+            .find(|a| a.id() == id)
+            .cloned();
+        let status = if let Some(adapter) = adapter {
+            if !matches!(
+                adapter.health().await,
+                HealthStatus::Healthy | HealthStatus::Degraded
+            ) {
+                "UNAVAILABLE"
+            } else if !self.breaker.available(id, Instant::now()) {
+                "COOLDOWN"
+            } else {
+                let lane = self.agent_lanes.lock().await.get(id).cloned();
+                if lane.is_some_and(|lane| lane.try_lock().is_err()) {
+                    "BUSY"
+                } else if self
+                    .adapter_runs
+                    .lock()
+                    .unwrap()
+                    .get(id)
+                    .is_some_and(|n| *n > 0)
+                {
+                    "ACTIVE"
+                } else {
+                    "IDLE"
+                }
+            }
+        } else {
+            "UNAVAILABLE"
+        };
+        serde_json::json!({"state":status,"source":"local_gateway_activity_and_adapter_health","observed_at":now()})
     }
     fn begin_run(&self) -> ActiveRun {
         self.active_runs.fetch_add(1, Ordering::Relaxed);
@@ -117,6 +178,7 @@ impl GatewayState {
             .entry(adapter.id().to_owned())
             .or_default()
             .clone();
+        let queue_timer = budget.measure(execution::Phase::Queue);
         let mut permit = tokio::time::timeout_at(
             budget.child_deadline(AGENT_QUEUE_TIMEOUT),
             lane.lock_owned(),
@@ -126,6 +188,7 @@ impl GatewayState {
             if budget.expired() {
                 return Box::new(budget.timeout_response());
             }
+            budget.metrics.lock().unwrap().reason_code = Some("agent_queue_timeout".into());
             let mut response = error(
                 StatusCode::TOO_MANY_REQUESTS,
                 "LMX_RATE_LIMITED",
@@ -136,6 +199,8 @@ impl GatewayState {
                 .insert("Retry-After", "5".parse().unwrap());
             Box::new(response)
         })?;
+        drop(queue_timer);
+        let interval_timer = budget.measure(execution::Phase::Interval);
         if let Some(last) = *permit {
             tokio::time::timeout_at(
                 budget.deadline,
@@ -144,6 +209,7 @@ impl GatewayState {
             .await
             .map_err(|_| Box::new(budget.timeout_response()))?;
         }
+        drop(interval_timer);
         if budget.expired() {
             return Err(Box::new(budget.timeout_response()));
         }
@@ -390,6 +456,9 @@ impl GatewayState {
         call.request(&serde_json::json!([{"role":"user","content":prompt}]))
             .await
             .map_err(|_| AdapterError::ProcessFailed)?;
+        call.budget().metrics.lock().unwrap().auth_route_ms = Some(call.budget().elapsed_ms());
+        let _adapter_run = self.begin_adapter(adapter.id());
+        let adapter_timer = call.budget().measure(execution::Phase::Adapter);
         let response = tokio::time::timeout_at(
             call.budget().deadline,
             adapter.invoke(NormalizedRequest {
@@ -404,6 +473,7 @@ impl GatewayState {
         )
         .await
         .map_err(|_| AdapterError::Timeout)??;
+        drop(adapter_timer);
         call.answer(&response.text)
             .await
             .map_err(|_| AdapterError::ProcessFailed)?;
@@ -612,7 +682,8 @@ async fn chat_models(State(state): State<GatewayState>, headers: HeaderMap) -> R
                 .map(|(at, _)| at.elapsed().as_secs())
                 .unwrap_or(300);
             let observed_at = now().saturating_sub(age as i64);
-            data.push(serde_json::json!({"catalog":{"observed_at":observed_at,"expires_at":observed_at+300,"ttl_seconds":300,"status":if age < 300 { "CURRENT" } else { "STALE" },"source":"adapter_public_catalog","live_verified":false},"id":model.id,"provider":model.provider_id,"stream":model.supports_streaming,"chat":model.chat,"connection_id":model.connection_id.as_deref().unwrap_or(adapter.id()),"adapter":adapter.id(),"identity_scope":"adapter_compat"}));
+            let runtime = state.connection_runtime_status(adapter.id()).await;
+            data.push(serde_json::json!({"runtime":runtime,"catalog":{"observed_at":observed_at,"expires_at":observed_at+300,"ttl_seconds":300,"status":if age < 300 { "CURRENT" } else { "STALE" },"source":"adapter_public_catalog","live_verified":false},"id":model.id,"provider":model.provider_id,"stream":model.supports_streaming,"chat":model.chat,"connection_id":model.connection_id.as_deref().unwrap_or(adapter.id()),"adapter":adapter.id(),"identity_scope":"adapter_compat"}));
         }
     }
     Json(serde_json::json!({"schema_version":2,"data":data})).into_response()
@@ -684,6 +755,7 @@ async fn chat(
         Err(_) => return recording::persistence_error(),
     };
     let call = guard.call();
+    call.budget().metrics.lock().unwrap().request_bytes = Some(body.len() as u64);
     if call
         .request(&serde_json::to_value(&request.messages).unwrap_or_default())
         .await
@@ -929,6 +1001,20 @@ async fn chat_inner(
         .stream_options
         .as_ref()
         .is_some_and(|options| options.include_usage);
+    call.normalization(normalization.as_deref());
+    {
+        let budget = call.budget();
+        let mut metrics = budget.metrics.lock().unwrap();
+        metrics.auth_route_ms = Some(budget.elapsed_ms());
+        metrics.route_kind = Some(
+            if virtual_route {
+                "virtual_route"
+            } else {
+                "explicit_model"
+            }
+            .into(),
+        );
+    }
     let permit = match state.acquire_agent(adapter.as_ref(), &call.budget()).await {
         Ok(permit) => permit,
         Err(response) => return *response,
@@ -937,7 +1023,10 @@ async fn chat_inner(
     let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
     let created = now();
     call.target(&actual_model, &adapter_id, &id, None);
+    let adapter_run = state.begin_adapter(&adapter_id);
+    let adapter_timer = call.budget().measure(execution::Phase::Adapter);
     if request.stream {
+        let startup_timer = call.budget().measure(execution::Phase::Startup);
         let mut provider_stream = match tokio::time::timeout_at(
             call.budget().child_deadline(Duration::from_secs(30)),
             adapter.invoke_events(normalized),
@@ -960,6 +1049,7 @@ async fn chat_inner(
                 );
             }
         };
+        drop(startup_timer);
         let model = actual_model.clone();
         let route_state = state.clone();
         let events = async_stream::stream! {
@@ -974,6 +1064,7 @@ async fn chat_inner(
                 let next_deadline = (tokio::time::Instant::now() + STREAM_IDLE_TIMEOUT).min(deadline);
                 match tokio::time::timeout_at(next_deadline, provider_stream.next()).await {
                     Ok(Some(Ok(StreamEvent::Delta(delta)))) if !completed => {
+                        call.first_output(&delta);
                         output_bytes += delta.len();
                         if output_bytes > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
                         if call.answer(&delta).await.is_err() { failure = Some("LMX_INTERNAL_ERROR"); break; }
@@ -990,6 +1081,8 @@ async fn chat_inner(
                     Err(_) => { route_state.breaker.open(&adapter_id, Instant::now(), Duration::from_secs(30)); failure = Some("LMX_PROCESS_TIMEOUT"); break; },
                 }
             }
+            drop(adapter_timer);
+            drop(adapter_run);
             if let Some(code) = failure {
                 call.fail(code);
                 yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"public_interface","retryable":false,"request_id":id}}).to_string()));
@@ -1025,6 +1118,8 @@ async fn chat_inner(
             )
         }
     };
+    drop(adapter_timer);
+    drop(adapter_run);
     if call.answer(&response.text).await.is_err() {
         return recording::persistence_error();
     }

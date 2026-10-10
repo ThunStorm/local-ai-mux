@@ -7,6 +7,7 @@ export type AuthStatus = "CHECKING" | "LOGIN_PENDING" | "READY" | "AUTH_REQUIRED
 export type ModelTestStatus = "VERIFYING" | "VERIFIED" | "FAILED";
 type Filter = "all" | "saved" | "connectable" | "detected";
 type Props = {
+  runtimeStatuses?: Record<string, { state: string; observed_at: number; source: string }>;
   applications: Detection[];
   connected: [string, string][];
   added: [string, string][];
@@ -30,7 +31,7 @@ type Props = {
 const connectable = (app: Detection) => app.connectability === "SUPPORTED_VERSION_UNKNOWN" && !!app.executable;
 const addable = (app: Detection) => app.detection_source !== "executable" && app.detection_source !== "windows_app_paths" && app.connectability !== "BROKEN_INSTALL";
 
-export default function ApplicationInventory({ applications, connected, added, selectedModels, authStatuses, modelTests, quotaBuckets, connecting, adding, locale, onConnect, onConnectMimoCode, onCheckAuth, onCliLogin, onVerifyModel, onHide, onDisconnect, onToggleAdded }: Props) {
+export default function ApplicationInventory({ runtimeStatuses = {}, applications, connected, added, selectedModels, authStatuses, modelTests, quotaBuckets, connecting, adding, locale, onConnect, onConnectMimoCode, onCheckAuth, onCliLogin, onVerifyModel, onHide, onDisconnect, onToggleAdded }: Props) {
   const zh = locale === "zh";
   const [preferred, setPreferred] = useState<Record<string, string>>({});
   const [modelToTest, setModelToTest] = useState<Record<string, string>>({});
@@ -65,10 +66,13 @@ export default function ApplicationInventory({ applications, connected, added, s
       const authLabel = auth === "READY" ? zh ? "已登录" : "Signed in" : auth === "AUTH_REQUIRED" ? zh ? "需要登录" : "Sign-in required" : auth === "CHECKING" || auth === "LOGIN_PENDING" ? zh ? "登录状态确认中" : "Checking sign-in" : auth === "ERROR" ? zh ? "登录状态无法确认" : "Sign-in status unavailable" : null;
       const authApplies = id === "codex" || id === "qoder" || id === "qoder-cn" || auth === "AUTH_REQUIRED";
       const buckets = id === "mimo" ? [] : quotaBuckets.filter(item => item.connection_id === id);
-      const status = connectedPath ? id === "mimo" ? zh ? "MiMo Code 本次运行已连接 · 令牌30分钟" : "MiMo Code connected · 30-minute token" : zh ? "已保存连接，运行状态待检" : "Saved connection; runtime unchecked" : choice ? zh ? "官方运行时待验证" : "Runtime not yet verified" : isAdded ? zh ? "已登记应用，暂无 API 桥" : "App recorded; no API bridge" : desktop ? zh ? "仅检测到，暂无 API 桥" : "Detected; no API bridge" : zh ? "暂不支持 API 接入" : "API connection unsupported";
+      const runtime = runtimeStatuses[id === "mimo" ? "mimocode" : id];
+      const currentRuntime = runtime && Date.now() / 1000 - runtime.observed_at <= 30 && runtime.observed_at <= Date.now() / 1000;
+      const runtimeLabel = runtime && (zh ? ({ ACTIVE: "正在执行", IDLE: "空闲", BUSY: "连接忙碌", COOLDOWN: "冷却中", UNAVAILABLE: "不可用" }[runtime.state] ?? "未知") : runtime.state);
+      const status = connectedPath && currentRuntime ? runtimeLabel : connectedPath ? id === "mimo" ? zh ? "MiMo Code 本次运行已连接 · 令牌30分钟" : "MiMo Code connected · 30-minute token" : zh ? "已保存连接，运行状态待检" : "Saved connection; runtime unchecked" : choice ? zh ? "官方运行时待验证" : "Runtime not yet verified" : isAdded ? zh ? "已登记应用，暂无 API 桥" : "App recorded; no API bridge" : desktop ? zh ? "仅检测到，暂无 API 桥" : "Detected; no API bridge" : zh ? "暂不支持 API 接入" : "API connection unsupported";
       return <article className="inventory-row" role="listitem" key={id}>
         <div className="inventory-main"><SoftwareIcon id={id} name={display.name} /><div className="inventory-identity"><h2>{display.name}</h2><p>{display.version ? `${zh ? "版本" : "Version"} ${display.version}` : zh ? "版本未知" : "Version unknown"}{connectedPath && modelCount !== undefined && ` · ${modelCount} ${zh ? "个已报告模型" : "reported models"}`}</p><small title={display.install_path}>{display.install_path}</small></div></div>
-        <div className="inventory-state"><span className={`state-label ${connectedPath ? "saved" : ""}`}><span className="status-dot" />{status}</span>{choice && authApplies && <small className="auth-state">{authLabel ?? (zh ? "登录状态待检查" : "Sign-in unchecked")}</small>}{connectedPath && <div className="quota-lines">{buckets.length === 0 ? <small>{zh ? "额度未知" : "Quota unknown"}</small> : buckets.map(bucket => {
+        <div className="inventory-state"><span className={`state-label ${connectedPath ? "saved" : ""}`}><span className="status-dot" />{status}</span>{choice && authApplies && <small className="auth-state">{authLabel ?? (zh ? "登录状态待检查" : "Sign-in unchecked")}</small>}{connectedPath && runtime && <small title={zh ? "来源：本机占用与 Adapter 健康，不代表真实推理验收" : "Source: local activity and adapter health; not a live model test"}>{zh ? "状态观测" : "Observed"} {new Date(runtime.observed_at * 1000).toLocaleTimeString()}{!currentRuntime && (zh ? " · 已过期" : " · Stale")}</small>}{connectedPath && <div className="quota-lines">{buckets.length === 0 ? <small>{zh ? "额度未知" : "Quota unknown"}</small> : buckets.map(bucket => {
           const fresh = bucket.observed_at > 0 && Date.now() / 1000 - bucket.observed_at <= 600;
           const value = bucket.source === "PROVIDER_REPORTED" && bucket.remaining !== null ? `${bucket.remaining}${bucket.unit === "%" ? "%" : ` ${bucket.unit ?? ""}`}` : zh ? "未知" : "Unknown";
           const label = bucket.bucket_id === "legacy" ? zh ? "上游额度" : "Upstream quota" : zh ? bucket.label === "primary" ? "主窗口" : bucket.label === "secondary" ? "次窗口" : bucket.label.replace(" min window", " 分钟窗口") : bucket.label;

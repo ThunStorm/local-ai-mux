@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add migration 0013 with optional bounded call diagnostics, independent queue/spacing/adapter timings and request correlation; retain opt-in body recording, store:false and legacy nulls. Extend existing history, local connection state and capability evidence panels.
+
 - Add compatible v2 capability/catalog freshness and evidence expiry; downgrade stale effective claims to UNKNOWN without hiding models or upgrading fixture evidence to live verification.
 
 - Bound Gateway requests from HTTP admission through auth, route, Agent queue/spacing, execution and response consumption with one 600-second monotonic deadline; keep existing limits and add safe X-Request-ID correlation.

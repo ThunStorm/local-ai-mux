@@ -681,3 +681,66 @@ async fn enabling_after_a_call_starts_does_not_retroactively_capture_its_body() 
         .unwrap()
         .is_none());
 }
+
+#[tokio::test]
+async fn bounded_diagnostics_correlate_requests_without_capturing_prompt_or_inventing_timings() {
+    for stream in [false, true] {
+        let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        state.register(Arc::new(Fixture)).await;
+        let (_, key) = state.create_key(&["chat:invoke"]).await.unwrap();
+        let body = json!({"model":"fixture/model","messages":[{"role":"user","content":"PROMPT_PRIVATE_SENTINEL"}],"stream":stream});
+        let length = body.to_string().len() as u64;
+        let response = router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("authorization", format!("Bearer {key}"))
+                    .header("X-Request-ID", "sk-forged-private-value")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let id = response.headers()["X-Request-ID"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let call = localmux_storage::list_calls(&state.pool, &Default::default())
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(call.request_id.as_deref(), Some(id.as_str()));
+        assert!(id.starts_with("req_"));
+        let d = call.diagnostics.unwrap();
+        assert_eq!(d.request_bytes, Some(length));
+        assert_eq!(d.body_recording_enabled, Some(false));
+        assert!(d.adapter_ms.is_some());
+        assert!(d.total_elapsed_ms.unwrap() >= d.adapter_ms.unwrap());
+        assert_eq!(d.model_execution_ms, None);
+        assert_eq!(d.first_output_ms.is_some(), stream);
+        assert_eq!(d.upstream_cancel_verified.as_deref(), Some("UNKNOWN"));
+        if !stream {
+            assert_eq!(d.response_bytes, Some(bytes.len() as u64));
+        }
+        let encoded = serde_json::to_string(&d).unwrap();
+        assert!(encoded.len() <= 8192);
+        for secret in [
+            "PROMPT_PRIVATE_SENTINEL",
+            "ANSWER_PRIVATE_SENTINEL",
+            key.as_str(),
+            "sk-forged-private-value",
+        ] {
+            assert!(!encoded.contains(secret));
+        }
+        assert_eq!(
+            state.connection_runtime_status("fixture").await["state"],
+            "IDLE"
+        );
+        assert_eq!(
+            state.connection_runtime_status("missing").await["state"],
+            "UNAVAILABLE"
+        );
+    }
+}

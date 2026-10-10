@@ -54,12 +54,14 @@ impl Call {
     }
     pub async fn request(&self, messages: &serde_json::Value) -> anyhow::Result<()> {
         let Some(record) = &self.0 else {
+            self.3.metrics.lock().unwrap().body_recording_enabled = Some(false);
             return Ok(());
         };
         let id = record.lock().unwrap().id.clone();
         let generation =
             localmux_storage::start_content(&self.1, &id, &redact_value(messages).to_string())
                 .await?;
+        self.3.metrics.lock().unwrap().body_recording_enabled = Some(generation.is_some());
         if let Some(generation) = generation {
             *self.2.lock().await = Some(ContentCapture {
                 generation,
@@ -68,7 +70,31 @@ impl Call {
         }
         Ok(())
     }
+    pub fn first_output(&self, delta: &str) {
+        if !delta.is_empty() {
+            self.3
+                .metrics
+                .lock()
+                .unwrap()
+                .first_output_ms
+                .get_or_insert(self.3.elapsed_ms());
+        }
+    }
+    pub fn normalization(&self, value: Option<&str>) {
+        self.3.metrics.lock().unwrap().normalization = value
+            .filter(|v| *v == "leading_instructions_v1")
+            .map(str::to_owned);
+    }
     pub async fn answer(&self, delta: &str) -> anyhow::Result<()> {
+        {
+            let mut metrics = self.3.metrics.lock().unwrap();
+            metrics.output_text_bytes = Some(
+                metrics
+                    .output_text_bytes
+                    .unwrap_or(0)
+                    .saturating_add(delta.len() as u64),
+            );
+        }
         let mut capture = self.2.lock().await;
         let Some(content) = capture.as_mut() else {
             return Ok(());
@@ -99,6 +125,14 @@ impl Call {
         }
     }
     pub fn metadata(&self, metadata: &ResponseMetadata) {
+        let mut metrics = self.3.metrics.lock().unwrap();
+        if let Some(usage) = &metadata.usage {
+            metrics.usage_source =
+                (usage.source == "provider_reported").then(|| "provider_reported".into());
+            metrics.usage_scope = matches!(usage.scope.as_str(), "request" | "last_turn")
+                .then(|| usage.scope.clone());
+        }
+        drop(metrics);
         if let Some(record) = &self.0 {
             let mut record = record.lock().unwrap();
             record.finish_reason = Some(
@@ -128,6 +162,17 @@ impl Call {
             return;
         }
         self.metadata(metadata);
+        let mut metrics = self.3.metrics.lock().unwrap();
+        metrics.outcome = Some(
+            match metadata.finish_reason {
+                FinishReason::Length => "INCOMPLETE",
+                FinishReason::ContentFilter => "PARTIAL",
+                FinishReason::Cancelled => "CANCELLED",
+                _ => "DIRECT_COMPLETED",
+            }
+            .into(),
+        );
+        drop(metrics);
         if let Some(record) = &self.0 {
             record.lock().unwrap().status = match metadata.finish_reason {
                 FinishReason::Length => "truncated",
@@ -139,6 +184,20 @@ impl Call {
         }
     }
     pub fn fail(&self, code: &str) {
+        {
+            let mut metrics = self.3.metrics.lock().unwrap();
+            metrics.outcome = Some(
+                if code == "LMX_STREAM_INTERRUPTED" {
+                    "UNKNOWN_TERMINATION"
+                } else {
+                    "ERROR"
+                }
+                .into(),
+            );
+            if code == "LMX_PROCESS_TIMEOUT" {
+                metrics.cancel_requested = true;
+            }
+        }
         if let Some(record) = &self.0 {
             let mut record = record.lock().unwrap();
             record.status = match code {
@@ -216,6 +275,8 @@ impl CallGuard {
                 input_tokens: None,
                 output_tokens: None,
                 total_tokens: None,
+                request_id: None,
+                diagnostics: None,
             };
             Call(
                 Some(Arc::new(Mutex::new(record))),
@@ -268,12 +329,29 @@ impl CallGuard {
                 }
                 .into();
             }
+            record.request_id = Some(self.call.budget().request_id.clone());
+            let mut diagnostics = self.call.budget().snapshot();
+            if record.status == "cancelled" {
+                diagnostics.cancel_requested = true;
+                diagnostics.outcome = Some("CANCELLED".into());
+            }
+            if record.status == "timeout" {
+                diagnostics.cancel_requested = true;
+                diagnostics
+                    .reason_code
+                    .get_or_insert("overall_deadline".into());
+            }
+            record.diagnostics = Some(sqlx::types::Json(diagnostics));
             record.finished_at = Some(now());
             record.elapsed_ms = Some(self.start.elapsed().as_millis().min(i64::MAX as u128) as i64);
             record
         })
     }
     pub async fn persist(&mut self) -> anyhow::Result<()> {
+        let _finalize_timer = self
+            .call
+            .budget()
+            .measure(super::execution::Phase::Finalize);
         if let Some(record) = self.snapshot() {
             if let Err(error) = localmux_storage::finish_call(&self.pool, &record).await {
                 self.call.fail("LMX_INTERNAL_ERROR");
@@ -284,6 +362,7 @@ impl CallGuard {
         Ok(())
     }
     pub async fn response(mut self, response: Response) -> Response {
+        self.call.3.metrics.lock().unwrap().http_status = Some(response.status().as_u16());
         if self.call.0.is_none() {
             self.persisted = true;
             return response;
@@ -294,6 +373,12 @@ impl CallGuard {
                 .await
                 .unwrap_or_default();
             let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+            if let Some(reason) = value["error"]["reason_code"].as_str() {
+                if reason.len() <= 80 && reason.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                {
+                    self.call.3.metrics.lock().unwrap().reason_code = Some(reason.into());
+                }
+            }
             self.call.fail(
                 value["error"]["code"]
                     .as_str()
@@ -316,6 +401,7 @@ impl CallGuard {
                 let mut guard = self;
                 while let Some(frame) = data.next().await {
                     if frame.is_err() { guard.call.fail("LMX_STREAM_INTERRUPTED"); }
+                    if let Ok(bytes) = &frame { let mut metrics = guard.call.3.metrics.lock().unwrap(); metrics.response_bytes = Some(metrics.response_bytes.unwrap_or(0).saturating_add(bytes.len() as u64)); metrics.response_bytes_scope = Some("through_first_terminal_frame".into()); }
                     // Persist a known terminal result before forwarding its terminal frame.
                     // SDKs may stop polling immediately after completed / [DONE].
                     if !guard.persisted && guard.call.terminal() && guard.persist().await.is_err() {
@@ -330,10 +416,23 @@ impl CallGuard {
             };
             Response::from_parts(parts, Body::from_stream(stream))
         } else {
+            let (parts, body) = response.into_parts();
+            let bytes = match axum::body::to_bytes(body, 16 * 1024 * 1024).await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    self.call.fail("LMX_INTERNAL_ERROR");
+                    return persistence_error();
+                }
+            };
+            {
+                let mut metrics = self.call.3.metrics.lock().unwrap();
+                metrics.response_bytes = Some(bytes.len() as u64);
+                metrics.response_bytes_scope = Some("buffered_body".into());
+            }
             if self.persist().await.is_err() {
                 return persistence_error();
             }
-            response
+            Response::from_parts(parts, Body::from(bytes))
         }
     }
 }

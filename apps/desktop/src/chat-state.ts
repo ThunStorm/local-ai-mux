@@ -1,6 +1,7 @@
 export type Support = "SUPPORTED" | "UNSUPPORTED" | "UNKNOWN";
 export type ParameterCapability = { support: Support; min: number; max: number | null };
-export type ChatModel = { id: string; provider: string; stream: boolean; chat: { history: Support; system: Support; temperature: ParameterCapability; top_p: ParameterCapability; max_tokens: ParameterCapability; source: string } };
+export type CapabilityDetail = { effective_support: Support; native_support: Support; public_interface_support: Support; freshness?: string | null; unknown_reason?: string | null; limiting_layer?: string | null; evidence: { version: string | null; observed_at: number | null; expires_at?: number | null; live_verified: boolean; source_type: string }[] };
+export type ChatModel = { catalog?: { observed_at: number; expires_at: number; status: string }; runtime?: { state: string; observed_at: number; source: string }; id: string; provider: string; stream: boolean; chat: { history: Support; system: Support; temperature: ParameterCapability; top_p: ParameterCapability; max_tokens: ParameterCapability; source: string; details?: { [name: string]: CapabilityDetail } } };
 export type Parameters = { temperature: number | null; top_p: number | null; max_tokens: number | null };
 export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 export type ExchangeStatus = "waiting" | "receiving" | "completed" | "failed" | "stopped";

@@ -298,6 +298,7 @@ pub async fn create(
         Err(_) => return super::recording::persistence_error(),
     };
     let call = guard.call();
+    call.budget().metrics.lock().unwrap().request_bytes = Some(body.len() as u64);
     let messages = if request.input.is_string() {
         json!([{"role":"user","content":request.input}])
     } else {
@@ -384,6 +385,22 @@ async fn create_inner(
         messages: Vec::new(),
         parameters: Default::default(),
     };
+    {
+        let budget = call.budget();
+        let mut metrics = budget.metrics.lock().unwrap();
+        metrics.auth_route_ms = Some(budget.elapsed_ms());
+        metrics.route_kind = Some(
+            if matches!(
+                request.model.as_str(),
+                "free" | "cheap" | "balanced" | "best"
+            ) {
+                "virtual_route"
+            } else {
+                "explicit_model"
+            }
+            .into(),
+        );
+    }
     let permit = match state
         .acquire_agent(context.adapter.as_ref(), &call.budget())
         .await
@@ -392,7 +409,10 @@ async fn create_inner(
         Err(response) => return *response,
     };
     let deadline = call.budget().deadline;
+    let adapter_run = state.begin_adapter(context.adapter.id());
+    let adapter_timer = call.budget().measure(super::execution::Phase::Adapter);
     if request.stream {
+        let startup_timer = call.budget().measure(super::execution::Phase::Startup);
         let session = match tokio::time::timeout_at(
             call.budget().child_deadline(Duration::from_secs(30)),
             context
@@ -421,6 +441,7 @@ async fn create_inner(
                 )
             }
         };
+        drop(startup_timer);
         let pool = state.pool.clone();
         let stream_state = state.clone();
         let owner_key_id = key.id.clone();
@@ -452,6 +473,7 @@ async fn create_inner(
                 };
                 match next {
                     Ok(StreamEvent::Delta(delta)) if !completed => {
+                        call.first_output(&delta);
                         if text.len() + delta.len() > 8 * 1024 * 1024 { failure = Some("LMX_OUTPUT_TOO_LARGE"); break; }
                         if call.answer(&delta).await.is_err() { failure = Some("LMX_INTERNAL_ERROR"); break; }
                         text.push_str(&delta);
@@ -467,6 +489,8 @@ async fn create_inner(
                     },
                 }
             }
+            drop(adapter_timer);
+            drop(adapter_run);
             if let Some(code) = failure {
                 call.fail(code);
                 yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":sequence,"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed"}}})));
@@ -525,6 +549,8 @@ async fn create_inner(
             return adapter_error(kind);
         }
     };
+    drop(adapter_timer);
+    drop(adapter_run);
     let native_id = result
         .provider_session_id
         .as_deref()

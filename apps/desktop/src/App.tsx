@@ -18,6 +18,7 @@ type QuotaSnapshot = { connection_id: string; remaining: number | null; limit: n
 type Conversation = { id: string; model_id: string; adapter_id: string; provider_session_id: string | null; resume_supported: boolean; created_at: number; last_active_at: number; status: string };
 type RunEvent = { kind: string; detail_json: string; observed_at: number };
 type AuthStatus = "CHECKING" | "LOGIN_PENDING" | "READY" | "AUTH_REQUIRED" | "ERROR";
+type RuntimeStatus = { state: "ACTIVE" | "IDLE" | "BUSY" | "COOLDOWN" | "UNAVAILABLE"; observed_at: number; source: string };
 type ModelTestStatus = "VERIFYING" | "VERIFIED" | "FAILED";
 const supportedAppIds = new Set(["codex", "qoder", "qoder-cn", "codebuddy", "mimo"]);
 const defaultPolicy: RoutePolicy = { reserve_as_free: false, allow_metered: false, best_model: null, priority: [] };
@@ -55,6 +56,7 @@ function App() {
   const [connectedApps, setConnectedApps] = useState<[string, string][]>([]);
   const [addedApps, setAddedApps] = useState<[string, string][]>([]);
   const [addingApp, setAddingApp] = useState<string | null>(null);
+  const [runtimeStatuses, setRuntimeStatuses] = useState<Record<string, RuntimeStatus>>({});
   const [selectedModels, setSelectedModels] = useState<Record<string, string[]>>({});
   const [authStatuses, setAuthStatuses] = useState<Record<string, AuthStatus>>({});
   const [modelTests, setModelTests] = useState<Record<string, ModelTestStatus>>({});
@@ -93,7 +95,10 @@ function App() {
     invoke<[string, string | null][]>("routing_status").then(value => { if (active) setRouteStatus(value); }).catch(() => {});
     invoke<QuotaSnapshot[]>("quota_snapshots").then(value => { if (active) setQuotaSnapshots(value); }).catch(() => {});
     invoke<QuotaBucket[]>("quota_buckets").then(value => { if (active) setQuotaBuckets(value); }).catch(() => {});
+    const loadRuntime = () => invoke<Record<string, RuntimeStatus>>("connection_runtime_status").then(value => { if (active) setRuntimeStatuses(value); }).catch(() => { if (active) setRuntimeStatuses({}); });
+    void loadRuntime();
     const quotaTimer = window.setInterval(() => {
+      void loadRuntime();
       invoke<QuotaBucket[]>("quota_buckets").then(value => { if (active) setQuotaBuckets(value); }).catch(() => {});
     }, 10_000);
     invoke<Conversation[]>("sessions_list").then(value => { if (active) setSessions(value); }).catch(() => {});
@@ -337,7 +342,7 @@ function App() {
       {!report && error?.view !== view && <p aria-live="polite">{t.scanning}</p>}
       {report && <>{shownApplications.length === 0 && <p className="empty">{t.none}</p>}
         {authMessage && <p className="notice" role="status">{authMessage}</p>}
-        <ApplicationInventory applications={shownApplications} connected={connectedApps} added={addedApps} selectedModels={selectedModels} authStatuses={authStatuses} modelTests={modelTests} quotaBuckets={quotaBuckets} connecting={connecting} adding={addingApp} locale={locale} onConnect={connectApp} onConnectMimoCode={connectMimoCode} onCheckAuth={checkCliAuth} onCliLogin={loginCli} onVerifyModel={verifyAppModel} onHide={hideApp} onDisconnect={disconnectApp} onToggleAdded={toggleDetectedApp} />
+        <ApplicationInventory runtimeStatuses={runtimeStatuses} applications={shownApplications} connected={connectedApps} added={addedApps} selectedModels={selectedModels} authStatuses={authStatuses} modelTests={modelTests} quotaBuckets={quotaBuckets} connecting={connecting} adding={addingApp} locale={locale} onConnect={connectApp} onConnectMimoCode={connectMimoCode} onCheckAuth={checkCliAuth} onCliLogin={loginCli} onVerifyModel={verifyAppModel} onHide={hideApp} onDisconnect={disconnectApp} onToggleAdded={toggleDetectedApp} />
         {hiddenApplications.length > 0 && <details className="roots"><summary>{locale === "zh" ? `已移出列表 (${hiddenApplications.length})` : `Hidden apps (${hiddenApplications.length})`}</summary><ul>{hiddenApplications.map(([id, name]) => <li key={id}>{name} <button className="quiet" onClick={() => restoreApp(id)}>{locale === "zh" ? "恢复显示" : "Restore"}</button></li>)}</ul></details>}
         {shownApplications.some(app => app.app_id === "mimo") && <div className="card mimo-connect"><h2>Xiaomi MiMo API</h2><p>{locale === "zh" ? "使用小米开放平台 API Key 连接；桌面应用登录态不与 API 共用。研发版仅在本次运行的内存中保存 Key，重启后需要重新连接。" : "Connect with a MiMo API key. Desktop sign-in is separate. This development build keeps the key in memory only; reconnect after restart."}</p>{connectedApps.some(([id]) => id === "mimo") ? <button disabled={connecting !== null} onClick={() => disconnectApp("mimo")}>{t.disconnect}</button> : <><label>API Key <input type="password" autoComplete="off" value={mimoKey} onChange={event => setMimoKey(event.target.value)} /></label><button disabled={connecting !== null || !mimoKey} onClick={connectMimo}>{connecting === "mimo" ? t.connecting : locale === "zh" ? "连接 MiMo API" : "Connect MiMo API"}</button></>}</div>}
         {report.applications.some(app => app.app_id === "qoder" && app.detection_source !== "executable") && !report.applications.some(app => app.app_id === "qoder" && isConnectable(app)) && <p className="notice">{locale === "zh" ? "Qoder 桌面版未提供可调用 CLI。请按官方说明安装并登录 Qoder CLI，然后重新扫描。" : "Install and sign in to the official Qoder CLI, then rescan."} <a href="https://docs.qoder.com/cli/installation" target="_blank" rel="noreferrer">{locale === "zh" ? "官方安装说明" : "Official installation guide"}</a></p>}

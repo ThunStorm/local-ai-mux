@@ -4,7 +4,7 @@ SQLite 通过版本化 migration 初始化：`0001` 设置、`0002` API Key 哈�
 
 `added_applications` 只保存应用 ID 与安装路径；它不建立 `connections` 行，也不会把桌面登录态注册到 Gateway。
 `0010` 将旧登记中按 `codebuddy` 合并的 WorkBuddy、CodeBuddy CN，以及按 `qoder` 合并的 Qoder CN，按安装路径迁到各自应用 ID；真实 CLI `connections` 原样保留，不跨产品迁移授权。
-`crates/storage/build.rs` 使新增 migration 文件触发重新编译；存储测试断言最新迁移版本（当前为 12），避免安装包继续携带旧的编译期迁移清单。
+`crates/storage/build.rs` 使新增 migration 文件触发重新编译；存储测试断言最新迁移版本（当前为 13），避免安装包继续携带旧的编译期迁移清单。
 
 研发版 MiMo 开放平台连接在 `connections.executable_path` 中存 `session-credential:mimo` 固定标记；真正 Key 仅在当前进程内存中。重启后标记行仍在，但连接不会恢复，用户需要显式重新输入 Key；旧 `os-credential:mimo` 行也不会触发系统凭据库读取。此连接不代表 MiMo Desktop 已登录。
 
@@ -18,3 +18,5 @@ SQLite 通过版本化 migration 初始化：`0001` 设置、`0002` API Key 哈�
 
 
 `0012` 新增 `call_recording_settings`（单行开关/代次，初始关闭）与 `call_contents`（按 call_id 外键级联，独立 JSON 输入、回答与录制状态）。原元数据表、Key/连接和续接映射不改写；旧记录没有正文。开关关闭与终止当前录制同事务，条件更新禁止过期代次继续写；保存相同开关值不递增代次。元数据终态和正文 complete/partial 标记同事务，启动恢复保留部分正文。列表仍只查元数据，正文由独立 IPC 按需读取，详情不截断；清理元数据同步清理正文，续接映射仍保留。备份从本版本起可能包含用户已启用录制的正文，不能把数据库备份当作纯元数据诊断报告。
+
+`0013` 在 call_records 添加可空 request_id 与受 8192 字节限制的 diagnostics JSON 及关联 ID 索引；最新 migration 为 13。没有新历史表、无正文复制、无旧记录回填。保留现有终态更新条件/事务，store:false 不写入新字段。升级需任务 0、完整性检查和 SQLite 一致备份；旧程序 SQLx 校验无法直接打开新版本数据库，回滚见[运行诊断](SESSION_MODEL.md#有界运行诊断2026-10-10--m3)。

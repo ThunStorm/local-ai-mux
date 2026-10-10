@@ -23,6 +23,39 @@ pub struct CallRecord {
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
+    pub request_id: Option<String>,
+    pub diagnostics: Option<sqlx::types::Json<CallDiagnostics>>,
+}
+
+/// Fixed keys and optional measurements; no prompt, raw events, arbitrary upstream error or credentials.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct CallDiagnostics {
+    pub accepted_at: Option<i64>,
+    pub auth_route_ms: Option<u64>,
+    pub queue_wait_ms: Option<u64>,
+    pub interval_wait_ms: Option<u64>,
+    pub adapter_startup_ms: Option<u64>,
+    pub adapter_ms: Option<u64>,
+    pub first_output_ms: Option<u64>,
+    pub model_execution_ms: Option<u64>,
+    pub response_finalize_ms: Option<u64>,
+    pub total_elapsed_ms: Option<u64>,
+    pub cancel_requested: bool,
+    pub upstream_cancel_verified: Option<String>,
+    pub route_kind: Option<String>,
+    pub usage_source: Option<String>,
+    pub usage_scope: Option<String>,
+    pub finish_source: Option<String>,
+    pub actual_model_source: Option<String>,
+    pub normalization: Option<String>,
+    pub outcome: Option<String>,
+    pub request_bytes: Option<u64>,
+    pub response_bytes: Option<u64>,
+    pub response_bytes_scope: Option<String>,
+    pub output_text_bytes: Option<u64>,
+    pub http_status: Option<u16>,
+    pub reason_code: Option<String>,
+    pub body_recording_enabled: Option<bool>,
 }
 
 pub async fn start_call(pool: &SqlitePool, record: &CallRecord) -> anyhow::Result<()> {
@@ -34,11 +67,11 @@ pub async fn start_call(pool: &SqlitePool, record: &CallRecord) -> anyhow::Resul
 
 pub async fn finish_call(pool: &SqlitePool, record: &CallRecord) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE call_records SET resolved_model=?,adapter_id=?,response_id=?,conversation_id=?,finished_at=?,elapsed_ms=?,status=?,error_code=?,finish_reason=?,actual_model=?,input_tokens=?,output_tokens=?,total_tokens=? WHERE id=? AND status='in_progress'")
+    sqlx::query("UPDATE call_records SET resolved_model=?,adapter_id=?,response_id=?,conversation_id=?,finished_at=?,elapsed_ms=?,status=?,error_code=?,finish_reason=?,actual_model=?,input_tokens=?,output_tokens=?,total_tokens=?,request_id=?,diagnostics=? WHERE id=? AND status='in_progress'")
         .bind(&record.resolved_model).bind(&record.adapter_id).bind(&record.response_id).bind(&record.conversation_id)
         .bind(record.finished_at).bind(record.elapsed_ms).bind(&record.status).bind(&record.error_code)
         .bind(&record.finish_reason).bind(&record.actual_model).bind(record.input_tokens).bind(record.output_tokens)
-        .bind(record.total_tokens).bind(&record.id).execute(&mut *tx).await?;
+        .bind(record.total_tokens).bind(&record.request_id).bind(&record.diagnostics).bind(&record.id).execute(&mut *tx).await?;
     sqlx::query("UPDATE call_contents SET state=? WHERE call_id=? AND state='recording'")
         .bind(if record.status == "completed" {
             "complete"
@@ -320,6 +353,68 @@ mod content_tests {
         pool.close().await;
         let pool = crate::open(&path).await.unwrap();
         assert!(!recording_setting(&pool).await.unwrap().enabled);
+        pool.close().await;
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+    #[tokio::test]
+    async fn version_twelve_upgrade_keeps_old_records_unknown_and_rejects_unbounded_diagnostics() {
+        let path =
+            std::env::temp_dir().join(format!("localmux-diagnostics-{}.db", std::process::id()));
+        let pool = crate::open(&path).await.unwrap();
+        let mut old = CallRecord {
+            id: "legacy".into(),
+            source: "api".into(),
+            endpoint: "chat".into(),
+            requested_model: "mock/echo".into(),
+            status: "completed".into(),
+            ..Default::default()
+        };
+        start_call(&pool, &old).await.unwrap();
+        finish_call(&pool, &old).await.unwrap();
+        sqlx::raw_sql("DROP INDEX call_records_request_id; ALTER TABLE call_records DROP COLUMN request_id; ALTER TABLE call_records DROP COLUMN diagnostics; DELETE FROM _sqlx_migrations WHERE version=13;").execute(&pool).await.unwrap();
+        pool.close().await;
+        let pool = crate::open(&path).await.unwrap();
+        let legacy = list_calls(&pool, &Default::default())
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(legacy.status, "completed");
+        assert!(legacy.request_id.is_none() && legacy.diagnostics.is_none());
+        assert!(!recording_setting(&pool).await.unwrap().enabled);
+        old.id = "bounded".into();
+        old.request_id = Some("req_synthetic".into());
+        old.diagnostics = Some(sqlx::types::Json(CallDiagnostics {
+            usage_source: Some("x".repeat(8192)),
+            ..Default::default()
+        }));
+        start_call(&pool, &old).await.unwrap();
+        assert!(finish_call(&pool, &old).await.is_err());
+        old.diagnostics = Some(sqlx::types::Json(CallDiagnostics {
+            upstream_cancel_verified: Some("UNKNOWN".into()),
+            ..Default::default()
+        }));
+        finish_call(&pool, &old).await.unwrap();
+        let row = list_calls(&pool, &Default::default())
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(row.request_id, old.request_id);
+        assert_eq!(
+            row.diagnostics.unwrap().upstream_cancel_verified.as_deref(),
+            Some("UNKNOWN")
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("PRAGMA integrity_check")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            "ok"
+        );
         pool.close().await;
         std::fs::remove_file(path).unwrap();
     }

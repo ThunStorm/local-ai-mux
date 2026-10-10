@@ -8,6 +8,7 @@ pub(crate) struct ExecutionBudget {
     pub accepted: Instant,
     pub deadline: Instant,
     pub request_id: String,
+    pub metrics: std::sync::Arc<std::sync::Mutex<localmux_storage::CallDiagnostics>>,
 }
 impl Default for ExecutionBudget {
     fn default() -> Self {
@@ -16,10 +17,28 @@ impl Default for ExecutionBudget {
             accepted,
             deadline: accepted + super::REQUEST_TIMEOUT,
             request_id: format!("req_{}", uuid::Uuid::new_v4().simple()),
+            metrics: std::sync::Arc::new(std::sync::Mutex::new(
+                localmux_storage::CallDiagnostics {
+                    accepted_at: Some(super::now()),
+                    upstream_cancel_verified: Some("UNKNOWN".into()),
+                    ..Default::default()
+                },
+            )),
         }
     }
 }
 impl ExecutionBudget {
+    pub fn elapsed_ms(&self) -> u64 {
+        self.accepted.elapsed().as_millis().min(u64::MAX as u128) as u64
+    }
+    pub fn measure(&self, phase: Phase) -> PhaseTimer {
+        PhaseTimer(self.clone(), Instant::now(), phase)
+    }
+    pub fn snapshot(&self) -> localmux_storage::CallDiagnostics {
+        let mut value = self.metrics.lock().unwrap().clone();
+        value.total_elapsed_ms = Some(self.elapsed_ms());
+        value
+    }
     pub fn child_deadline(&self, limit: std::time::Duration) -> Instant {
         self.deadline.min(Instant::now() + limit)
     }
@@ -27,11 +46,35 @@ impl ExecutionBudget {
         Instant::now() >= self.deadline
     }
     pub fn timeout_response(&self) -> Response {
+        self.metrics.lock().unwrap().reason_code = Some("overall_deadline".into());
         super::error(
             axum::http::StatusCode::GATEWAY_TIMEOUT,
             "LMX_PROCESS_TIMEOUT",
             "Request deadline exceeded",
         )
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Phase {
+    Queue,
+    Interval,
+    Startup,
+    Adapter,
+    Finalize,
+}
+pub(crate) struct PhaseTimer(ExecutionBudget, Instant, Phase);
+impl Drop for PhaseTimer {
+    fn drop(&mut self) {
+        let ms = self.1.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        let mut value = self.0.metrics.lock().unwrap();
+        match self.2 {
+            Phase::Queue => value.queue_wait_ms = Some(ms),
+            Phase::Interval => value.interval_wait_ms = Some(ms),
+            Phase::Startup => value.adapter_startup_ms = Some(ms),
+            Phase::Adapter => value.adapter_ms = Some(ms),
+            Phase::Finalize => value.response_finalize_ms = Some(ms),
+        }
     }
 }
 
@@ -143,7 +186,18 @@ mod tests {
         tokio::time::advance(Duration::from_secs(25)).await;
         drop(permit);
         let permit = pending.await.unwrap().unwrap();
+        let timer = budget.measure(Phase::Adapter);
         tokio::time::sleep(Duration::from_secs(10)).await;
+        drop(timer);
+        let measured = budget.snapshot();
+        assert_eq!(measured.queue_wait_ms, Some(25_000));
+        assert!(measured.interval_wait_ms.unwrap() <= 1);
+        assert!((10_000..=10_005).contains(&measured.adapter_ms.unwrap()));
+        assert_eq!(measured.model_execution_ms, None);
+        assert_eq!(
+            measured.upstream_cancel_verified.as_deref(),
+            Some("UNKNOWN")
+        );
         assert!((35_000..=35_005).contains(&budget.accepted.elapsed().as_millis()));
         assert!(budget.deadline - tokio::time::Instant::now() <= Duration::from_secs(565));
         drop(permit);

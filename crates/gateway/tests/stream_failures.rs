@@ -18,7 +18,7 @@ use std::{
 };
 use tower::ServiceExt;
 
-struct DiagnosticAdapter(Arc<AtomicUsize>, AdapterKind);
+struct DiagnosticAdapter(Arc<AtomicUsize>, AdapterKind, Arc<AtomicUsize>);
 #[async_trait]
 impl Adapter for DiagnosticAdapter {
     fn id(&self) -> &'static str {
@@ -28,6 +28,7 @@ impl Adapter for DiagnosticAdapter {
         self.1.clone()
     }
     async fn health(&self) -> HealthStatus {
+        self.2.fetch_add(1, Ordering::SeqCst);
         HealthStatus::Healthy
     }
     async fn list_models(&self) -> Result<Vec<ModelDescriptor>, AdapterError> {
@@ -92,6 +93,7 @@ async fn slow_first_text_is_not_cut_off_at_thirty_seconds_and_timeout_is_honest(
             .register(Arc::new(DiagnosticAdapter(
                 Arc::new(AtomicUsize::new(0)),
                 AdapterKind::Provider,
+                Arc::new(AtomicUsize::new(0)),
             )))
             .await;
         let (_, key) = state.create_key(&["chat:invoke"]).await.unwrap();
@@ -138,6 +140,7 @@ async fn stream_failure_cools_connection_without_claiming_its_models_disappeared
         .register(Arc::new(DiagnosticAdapter(
             calls.clone(),
             AdapterKind::Provider,
+            Arc::new(AtomicUsize::new(0)),
         )))
         .await;
     let (_, key) = state
@@ -218,6 +221,7 @@ async fn chat_and_responses_nonstream_allow_long_results_and_bound_total_time() 
                 .register(Arc::new(DiagnosticAdapter(
                     calls.clone(),
                     AdapterKind::Provider,
+                    Arc::new(AtomicUsize::new(0)),
                 )))
                 .await;
             let (_, key) = state
@@ -258,6 +262,7 @@ async fn both_streams_stop_at_total_deadline_even_with_regular_deltas() {
             .register(Arc::new(DiagnosticAdapter(
                 Arc::new(AtomicUsize::new(0)),
                 AdapterKind::Provider,
+                Arc::new(AtomicUsize::new(0)),
             )))
             .await;
         let (_, key) = state
@@ -289,10 +294,12 @@ async fn both_streams_stop_at_total_deadline_even_with_regular_deltas() {
 async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_drop() {
     let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
     let calls = Arc::new(AtomicUsize::new(0));
+    let checks = Arc::new(AtomicUsize::new(0));
     state
         .register(Arc::new(DiagnosticAdapter(
             calls.clone(),
             AdapterKind::Agent,
+            checks.clone(),
         )))
         .await;
     let (_, key) = state
@@ -328,29 +335,31 @@ async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_
     assert_eq!(first.status(), StatusCode::OK);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     tokio::time::pause();
-    let blocked = app
-        .clone()
-        .oneshot(post(
-            &other_key,
-            "/v1/responses",
-            serde_json::json!({"model":"diagnostic/sibling","input":"slow","stream":true}),
-        ))
-        .await
-        .unwrap();
+    let before = checks.load(Ordering::SeqCst);
+    let pending = tokio::spawn(app.clone().oneshot(post(
+        &other_key,
+        "/v1/responses",
+        serde_json::json!({"model":"diagnostic/sibling","input":"slow","stream":true}),
+    )));
+    while checks.load(Ordering::SeqCst) == before && !pending.is_finished() {
+        tokio::task::yield_now().await;
+    }
+    let blocked = pending.await.unwrap().unwrap();
     assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(blocked.headers()["Retry-After"], "5");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     drop(first);
     assert_eq!(state.active_tasks(), 0);
-    let next = app
-        .clone()
-        .oneshot(post(
-            &key,
-            "/v1/chat/completions",
-            chat("slow", "diagnostic/luna"),
-        ))
-        .await
-        .unwrap();
+    let before = calls.load(Ordering::SeqCst);
+    let pending = tokio::spawn(app.clone().oneshot(post(
+        &key,
+        "/v1/chat/completions",
+        chat("slow", "diagnostic/luna"),
+    )));
+    while calls.load(Ordering::SeqCst) == before && !pending.is_finished() {
+        tokio::task::yield_now().await;
+    }
+    let next = pending.await.unwrap().unwrap();
     assert_eq!(next.status(), StatusCode::OK);
     drop(next);
     assert_eq!(calls.load(Ordering::SeqCst), 2);

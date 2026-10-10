@@ -63,7 +63,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("latest migration");
-        assert_eq!(version, 12);
+        assert_eq!(version, 13);
         pool.close().await;
         std::fs::remove_file(&path).ok();
     }

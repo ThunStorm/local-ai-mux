@@ -355,6 +355,23 @@ async fn connect_app(
 }
 
 #[tauri::command]
+async fn connection_runtime_status(
+    control: tauri::State<'_, GatewayControl>,
+) -> Result<serde_json::Value, String> {
+    let connections = localmux_storage::saved_connections(&control.state.pool)
+        .await
+        .map_err(|_| "读取连接状态失败")?;
+    let mut statuses = serde_json::Map::new();
+    for (id, _) in connections {
+        statuses.insert(
+            id.clone(),
+            control.state.connection_runtime_status(&id).await,
+        );
+    }
+    Ok(serde_json::Value::Object(statuses))
+}
+
+#[tauri::command]
 async fn cli_auth_status(app_id: String, executable: String) -> Result<String, String> {
     if app_id != "qoder" && app_id != "qoder-cn" && app_id != "codex" && app_id != "mimo" {
         return Err("该运行时没有可确认的 CLI 登录状态".into());
@@ -1231,6 +1248,7 @@ pub fn run() {
             remove_detected_app,
             connect_app,
             cli_auth_status,
+            connection_runtime_status,
             cli_login,
             connect_mimo,
             connect_mimocode,
