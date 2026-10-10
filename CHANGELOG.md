@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add compatible v2 capability/catalog freshness and evidence expiry; downgrade stale effective claims to UNKNOWN without hiding models or upgrading fixture evidence to live verification.
+
 - Bound Gateway requests from HTTP admission through auth, route, Agent queue/spacing, execution and response consumption with one 600-second monotonic deadline; keep existing limits and add safe X-Request-ID correlation.
 
 - Add a persistent opt-in dialogue-recording switch with full submitted messages/input and received answers, including partial streams; stop active capture atomically when disabled and honor store:false.

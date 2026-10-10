@@ -268,3 +268,55 @@ async fn unknown_usage_and_finish_are_null_for_legacy_sdk_consumers() {
     assert!(result["choices"][0]["finish_reason"].is_null());
     assert!(result["localmux"]["actual_model"].is_null());
 }
+
+#[tokio::test]
+async fn stale_evidence_does_not_advertise_parameters_and_catalog_refresh_restores_current_claims()
+{
+    let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+    let adapter = Negotiated(Arc::new(AtomicUsize::new(0)));
+    let mut old = adapter.list_models().await.unwrap();
+    for detail in old[0].chat.details.values_mut() {
+        for e in &mut detail.evidence {
+            e.observed_at = Some(1);
+            e.expires_at = Some(301);
+        }
+    }
+    state.register(Arc::new(adapter)).await;
+    state.seed_catalog("negotiated", old).await;
+    let (_, key) = state
+        .create_key(&["models:read", "chat:invoke"])
+        .await
+        .unwrap();
+    let app = router(state.clone());
+    let get = || {
+        Request::builder()
+            .uri("/api/chat/models")
+            .header("authorization", format!("Bearer {key}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let catalog = value(app.clone().oneshot(get()).await.unwrap()).await;
+    assert_eq!(catalog["schema_version"], 2);
+    assert_eq!(catalog["data"].as_array().unwrap().len(), 1);
+    let chat = &catalog["data"][0]["chat"];
+    assert_eq!(chat["max_completion_tokens"]["support"], "UNKNOWN");
+    assert_eq!(chat["details"]["system"]["freshness"], "STALE");
+    assert_eq!(
+        chat["details"]["system"]["evidence"][0]["live_verified"],
+        false
+    );
+    let response = app.clone().oneshot(post(&key, "/v1/chat/completions", json!({"model":"negotiated/text","messages":[{"role":"user","content":"synthetic"}],"max_completion_tokens":4}))).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        value(response).await["error"]["reason_code"],
+        "evidence_expired_or_undated"
+    );
+    state.invalidate_catalog("negotiated").await;
+    let refreshed = value(app.oneshot(get()).await.unwrap()).await;
+    assert_eq!(refreshed["data"][0]["chat"]["system"], "SUPPORTED");
+    assert_eq!(refreshed["data"][0]["catalog"]["ttl_seconds"], 300);
+    assert_eq!(
+        refreshed["data"][0]["chat"]["details"]["system"]["freshness"],
+        "CURRENT"
+    );
+}

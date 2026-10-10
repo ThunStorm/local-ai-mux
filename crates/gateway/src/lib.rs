@@ -178,7 +178,7 @@ impl GatewayState {
             }
             // ponytail: one catalog lock serializes provider refreshes; use per-connection locks if measured latency requires it.
             let mut cache = self.catalog.lock().await;
-            let models = if let Some((_, models)) = cache
+            let mut models = if let Some((_, models)) = cache
                 .get(adapter.id())
                 .filter(|(time, _)| time.elapsed() < Duration::from_secs(300))
             {
@@ -195,6 +195,12 @@ impl GatewayState {
                     }
                 }
             };
+            for model in &mut models {
+                model.chat.expire_evidence(now());
+            }
+            if let Some((_, cached)) = cache.get_mut(adapter.id()) {
+                *cached = models.clone();
+            }
             drop(cache);
             for model in models {
                 candidates.push(RouteCandidate {
@@ -601,7 +607,12 @@ async fn chat_models(State(state): State<GatewayState>, headers: HeaderMap) -> R
             .flat_map(|(_, models)| models)
             .find(|model| model.id == candidate.model_id)
         {
-            data.push(serde_json::json!({"id":model.id,"provider":model.provider_id,"stream":model.supports_streaming,"chat":model.chat,"connection_id":model.connection_id.as_deref().unwrap_or(adapter.id()),"adapter":adapter.id(),"identity_scope":"adapter_compat"}));
+            let age = catalog
+                .get(adapter.id())
+                .map(|(at, _)| at.elapsed().as_secs())
+                .unwrap_or(300);
+            let observed_at = now().saturating_sub(age as i64);
+            data.push(serde_json::json!({"catalog":{"observed_at":observed_at,"expires_at":observed_at+300,"ttl_seconds":300,"status":if age < 300 { "CURRENT" } else { "STALE" },"source":"adapter_public_catalog","live_verified":false},"id":model.id,"provider":model.provider_id,"stream":model.supports_streaming,"chat":model.chat,"connection_id":model.connection_id.as_deref().unwrap_or(adapter.id()),"adapter":adapter.id(),"identity_scope":"adapter_compat"}));
         }
     }
     Json(serde_json::json!({"schema_version":2,"data":data})).into_response()

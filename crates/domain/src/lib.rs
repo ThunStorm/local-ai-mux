@@ -161,6 +161,10 @@ pub struct CapabilityDetail {
     pub reason_code: Option<String>,
     pub evidence: Vec<CapabilityEvidence>,
     pub constraints: CapabilityConstraints,
+    #[serde(default)]
+    pub freshness: Option<String>,
+    #[serde(default)]
+    pub unknown_reason: Option<String>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CapabilityEvidence {
@@ -169,6 +173,8 @@ pub struct CapabilityEvidence {
     pub version: Option<String>,
     pub observed_at: Option<i64>,
     pub live_verified: bool,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CapabilityConstraints {
@@ -237,7 +243,11 @@ impl ChatCapabilities {
                         version: version.clone(),
                         observed_at,
                         live_verified: false,
+                        expires_at: observed_at.map(|at| at + 300),
                     }],
+                    freshness: Some("CURRENT".into()),
+                    unknown_reason: (effective == Support::Unknown)
+                        .then(|| "exact_model_constraints_unverified".into()),
                     ..Default::default()
                 },
             );
@@ -264,6 +274,56 @@ impl ChatCapabilities {
             .unwrap()
             .constraints
             .guarantee = Some("local_receive_only; upstream_generation_and_billing_unknown".into());
+    }
+    /// Expiry changes effective claims, never the native model's inferred capabilities.
+    pub fn expire_evidence(&mut self, at: i64) {
+        for (name, detail) in &mut self.details {
+            let current = detail.evidence.iter().any(|e| {
+                e.observed_at.is_some_and(|t| t <= at)
+                    && e.expires_at
+                        .or(e.observed_at.map(|t| t + 300))
+                        .is_some_and(|t| at < t)
+            });
+            detail.freshness = Some(
+                if current {
+                    "CURRENT"
+                } else if detail.evidence.is_empty() {
+                    "UNKNOWN"
+                } else {
+                    "STALE"
+                }
+                .into(),
+            );
+            if !current && detail.effective_support == Support::Supported {
+                detail.effective_support = Support::Unknown;
+                detail.unknown_reason = Some("evidence_expired_or_undated".into());
+                detail.reason_code = Some("evidence_expired_or_undated".into());
+                match name.as_str() {
+                    "system" => self.system = Support::Unknown,
+                    "developer" => self.developer = Support::Unknown,
+                    "history" => self.history = Support::Unknown,
+                    "temperature" => self.temperature.support = Support::Unknown,
+                    "top_p" => self.top_p.support = Support::Unknown,
+                    "max_tokens" => self.max_tokens.support = Support::Unknown,
+                    "max_completion_tokens" => {
+                        self.max_completion_tokens.support = Support::Unknown
+                    }
+                    "reasoning_effort" => {
+                        self.reasoning_efforts.clear();
+                        self.default_reasoning_effort = None;
+                    }
+                    _ => {}
+                }
+            }
+            if detail.effective_support == Support::Unknown && detail.unknown_reason.is_none() {
+                detail.unknown_reason = Some(
+                    detail
+                        .reason_code
+                        .clone()
+                        .unwrap_or_else(|| "exact_model_constraints_unverified".into()),
+                );
+            }
+        }
     }
     pub fn public_candidate(&mut self, name: &str, reason: &str) {
         if let Some(detail) = self.details.get_mut(name) {
