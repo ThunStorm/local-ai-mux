@@ -349,6 +349,12 @@ async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_
     assert_eq!(blocked.headers()["Retry-After"], "5");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     drop(first);
+    for _ in 0..1000 {
+        if state.active_tasks() == 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
     assert_eq!(state.active_tasks(), 0);
     let before = calls.load(Ordering::SeqCst);
     let pending = tokio::spawn(app.clone().oneshot(post(
@@ -362,6 +368,12 @@ async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_
     let next = pending.await.unwrap().unwrap();
     assert_eq!(next.status(), StatusCode::OK);
     drop(next);
+    for _ in 0..1000 {
+        if state.active_tasks() == 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(state.active_tasks(), 0);
     // Measure the five-second spacing with a real clock: authorization uses a SQLite worker.
@@ -379,6 +391,12 @@ async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_
     assert!(started.elapsed() >= Duration::from_secs(5));
     assert!(started.elapsed() < Duration::from_secs(6));
     drop(third);
+    for _ in 0..1000 {
+        if state.active_tasks() == 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
     assert_eq!(calls.load(Ordering::SeqCst), 3);
     assert_eq!(state.active_tasks(), 0);
 }

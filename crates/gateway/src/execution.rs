@@ -127,26 +127,63 @@ pub(crate) async fn admit(
     }
     let (parts, body) = response.into_parts();
     let mut data = body.into_data_stream();
-    let stream = async_stream::stream! {
-        let _run = run;
-        loop {
-            match tokio::time::timeout_at(budget.deadline, data.next()).await {
-                Ok(Some(frame)) => yield frame,
-                Ok(None) => break,
-                Err(_) => {
-                    drop(data);
-                        let failure = serde_json::json!({"error":{"message":"Request deadline exceeded","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","reason_code":"overall_deadline","limiting_layer":"gateway","retryable":false,"request_id":budget.request_id}});
-                        let frame = if responses {
-                        let value = serde_json::json!({"type":"response.failed","sequence_number":budget.next_sequence(),"response":{"id":budget.response_id.lock().unwrap().clone(),"object":"response","status":"failed","output":[],"error":failure["error"]}});
-                        format!("event: response.failed\ndata: {}\n\n", value)
-                    } else { format!("data: {}\n\ndata: [DONE]\n\n", failure) };
-                    yield Ok(axum::body::Bytes::from(frame));
+    // A single buffered frame bounds backpressure; the producer owns all work and its absolute timer.
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let timed_out = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let task = tokio::spawn({
+        let budget = budget.clone();
+        let timed_out = timed_out.clone();
+        async move {
+            let _run = run;
+            loop {
+                if budget.expired() {
+                    timed_out.store(true, std::sync::atomic::Ordering::Relaxed);
                     break;
                 }
+                let forward = async {
+                    match data.next().await {
+                        Some(frame) => sender.send(frame).await.map(|_| true).unwrap_or(false),
+                        None => false,
+                    }
+                };
+                match tokio::time::timeout_at(budget.deadline, forward).await {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(_) => {
+                        timed_out.store(true, std::sync::atomic::Ordering::Relaxed);
+                        break;
+                    }
+                }
             }
+            // Dropping the body releases the CallGuard, Adapter stream/process, lane and active task.
         }
+    });
+    let task = StreamTask(task);
+    let stream = async_stream::stream! {
+        let _task = task;
+        while let Some(frame) = receiver.recv().await {
+            if budget.expired() { yield Ok(timeout_frame(&budget, responses)); return; }
+            yield frame;
+        }
+        if timed_out.load(std::sync::atomic::Ordering::Relaxed) { yield Ok(timeout_frame(&budget, responses)); }
     };
     Response::from_parts(parts, Body::from_stream(stream))
+}
+struct StreamTask(tokio::task::JoinHandle<()>);
+impl Drop for StreamTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+fn timeout_frame(budget: &ExecutionBudget, responses: bool) -> axum::body::Bytes {
+    let failure = serde_json::json!({"error":{"message":"Request deadline exceeded","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","reason_code":"overall_deadline","limiting_layer":"gateway","retryable":false,"request_id":budget.request_id}});
+    let frame = if responses {
+        let value = serde_json::json!({"type":"response.failed","sequence_number":budget.next_sequence(),"response":{"id":budget.response_id.lock().unwrap().clone(),"object":"response","status":"failed","output":[],"error":failure["error"]}});
+        format!("event: response.failed\ndata: {}\n\n", value)
+    } else {
+        format!("data: {}\n\ndata: [DONE]\n\n", failure)
+    };
+    frame.into()
 }
 
 #[cfg(test)]
@@ -220,8 +257,10 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let mut expired_interval = ExecutionBudget::default();
-        expired_interval.deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        let expired_interval = ExecutionBudget {
+            deadline: tokio::time::Instant::now() + Duration::from_secs(1),
+            ..Default::default()
+        };
         let error = state
             .acquire_agent(&Agent, &expired_interval)
             .await
@@ -247,8 +286,10 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(error.headers()["Retry-After"], "5");
-        let mut budget = ExecutionBudget::default();
-        budget.deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let budget = ExecutionBudget {
+            deadline: tokio::time::Instant::now() + Duration::from_secs(2),
+            ..Default::default()
+        };
         let error = state.acquire_agent(&Agent, &budget).await.unwrap_err();
         assert_eq!(error.status(), axum::http::StatusCode::GATEWAY_TIMEOUT);
         drop(permit);
@@ -256,5 +297,49 @@ mod tests {
             .acquire_agent(&Agent, &ExecutionBudget::default())
             .await
             .is_ok());
+    }
+    #[tokio::test]
+    async fn an_unconsumed_sse_body_expires_and_releases_the_lane_without_being_polled() {
+        use axum::{routing::post, Router};
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let state = super::super::GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        let app = Router::new().route("/v1/chat/completions", post(|axum::extract::State(state): axum::extract::State<super::super::GatewayState>, axum::extract::Extension(budget): axum::extract::Extension<ExecutionBudget>| async move {
+            let permit = state.acquire_agent(&Agent, &budget).await.unwrap();
+            let body = async_stream::stream! {
+                let _permit = permit;
+                yield Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"data: premature-success\n\n"));
+                std::future::pending::<()>().await;
+            };
+            Response::builder().header("content-type", "text/event-stream").body(Body::from_stream(body)).unwrap()
+        })).layer(axum::middleware::from_fn_with_state(state.clone(), admit)).with_state(state.clone());
+        tokio::time::pause();
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(state.active_tasks(), 1);
+        tokio::time::advance(Duration::from_secs(601)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(state.active_tasks(), 0);
+        let lane = state
+            .agent_lanes
+            .lock()
+            .await
+            .get("synthetic")
+            .unwrap()
+            .clone();
+        assert!(lane.try_lock().is_ok());
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let text = std::str::from_utf8(&bytes).unwrap();
+        assert!(text.contains("LMX_PROCESS_TIMEOUT"));
+        assert!(!text.contains("premature-success"));
     }
 }

@@ -30,3 +30,5 @@ Gateway Chat/Responses 非流式、原生续接和 SSE 使用 600 秒总执行�
 600 秒现在从 Gateway HTTP middleware 接受请求开始，覆盖鉴权、schema/目录/路由、30 秒 lane 等待、5 秒启动间隔、30 秒 Adapter 流启动、实际接收及终态持久化/响应编码。子期限取剩余预算与原上限的较小值；不改变默认 600/180/30/5。返回 HTTP 头 `X-Request-ID` 是 Gateway 新建的安全 ID，不信任调用方提供的 ID。超期返回既有 504 LMX_PROCESS_TIMEOUT；总期先于 queue 到期时不能误报本机忙。心跳不延长总期，慢客户端暂停消费也不能在重新消费时收到逾期成功帧。断线丢弃 owned stream/lane；仅保证本机清理，远端取消/计费 UNKNOWN。
 
 显式模型短测试同样从内部入口开始计时；桌面 120 秒客户端期限不变。ActiveRun 从 HTTP admission 覆盖预检和等待，SSE Body 丢弃后释放；非流/错误在生成响应后结束。错误 Body 可在总期到达后传递安全超时诊断，不继续启动上游。回滚 M1 可恢复旧的执行后起算语义，无数据库迁移，Key/Scope/连接不变。
+
+2026-10-10 M1 门禁补强：流生产者独立拥有单调 deadline、原 SSE Body/CallGuard/Adapter/lane，以最多单帧缓冲转发；总期包括等待客户端背压，Body 从未被消费也会到期释放资源。外部 Body 丢弃会 abort 生产任务，清理在 Tokio 下一调度发生；迟到缓存帧不能冒充完成。标准 15 秒注释心跳与180秒上游空闲保持不变。取消指 Gateway 实际观察到的 HTTP 对端关闭；客户端通过代理且代理保留连接时，不能推断原客户端已经断开，仍受总期限保护。隔离 SDK 测试固定 NO_PROXY=127.0.0.1,localhost，不更改用户代理配置。

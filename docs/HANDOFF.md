@@ -1,5 +1,7 @@
 # 交接记录
 
+2026-10-10 M1 门禁补强：SSE 使用独立600秒期限守护和单帧有界缓冲，下游停止消费也会在总期释放CallGuard/Adapter/进程/lane。离线未消费Body在601秒前释放且不转发迟到成功；取消任务由Tokio下一调度收口。官方SDK回环测试必须NO_PROXY，避免本机代理继续保持服务端连接导致无法观察直接客户端关闭；原15秒心跳与600/180/30/5保护值不改。
+
 2026-10-10 Gateway 可靠性 M5：SDK CLI/Codex JSONL 与目录 stdout/stderr 有界读取，Codex pending RPC 另限4MiB；Codex/Qoder/CN/CodeBuddy 复用隔离 cwd 和 owned 子进程管理。Unix 取消只清理本请求创建且仍拥有 leader 的进程组，等待/reap后不使用陈旧PID；离线假CLI证明未消费/已消费流取消、父子停止及无关进程保留。主动逃离组的后代与远端推理/计费继续未证实；Windows 当前只保留直接子句柄，原生进程树待验收。无新连接/真实推理/数据库迁移。
 
 2026-10-10 Gateway 可靠性 M4：Chat/Responses/SSE 共用来源校验，localmux 固定键/4096字节预算，标准响应ID与入站关联ID分开。HTTP/Codex 添加可信 source；无来源或累计用量、型号自述、未知 finish 不广告为事实。参数错误词表脱敏；Responses Body deadline 发 failed 且序号连续。针对性 Gateway/SDK/Codex 离线回归通过，官方 SDK 全矩阵接续 M6；无真实调用和新增迁移。
