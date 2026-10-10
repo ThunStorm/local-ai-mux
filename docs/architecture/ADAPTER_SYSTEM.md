@@ -26,3 +26,5 @@ Codex 子进程在 macOS 缺少显式代理环境时遵从现有系统固定 HTT
 2026-10-10 M2：复用五分钟目录缓存和 CapabilityDetail；公开版本/fixture 观察增加到期时间与未知理由。缓存刷新或显式失效后重新读取当前公开目录；过期支持证据转 UNKNOWN，不根据型号名称、答案自述或同族网页推断参数支持。读取公开目录不触发生成，不借 catalog 观察标记 live_verified。v2 新字段可缺省，无迁移；回滚移除兼容扩展即可。
 
 2026-10-10 M4：ResponseMetadata 增加可选 actual_model_source/finish_source，Gateway 对来源、型号长度/字符、规范化名称及 usage source/scope 做白名单检查。HTTP 标准元数据来源为 provider_reported；Codex thread model 与 rerouted 分别登记 app_server_thread/app_server_rerouted，未知 finish 仍 null。第三方 Adapter 未标来源的 stop/model/usage 不得成为对外已知事实；协议 Completed 仍可以证明接收结束，无需伪造 stop。无新增数据库迁移，旧标准客户端可继续忽略 localmux。
+
+2026-10-10 M5：shared cli::read_json_line 在读取时限1MiB，目录 stdout/stderr 同样各限1MiB，Codex 等待响应的 pending 通知另限4MiB；EOF/异常 JSON/非零退出不能冒充 Completed。Codex 版本读取与 CodeBuddy 目录复用有界且隔离 cwd 的公开命令执行。Unix 使用为本请求创建的新进程组；Drop 只在 Child.id 仍有效且 getpgid=自身PID时清理组，已 wait/reap 的句柄不使用旧PID，保留 Tokio 直接子进程清理。离线 fixture 验证父子停止和无关进程保留；主动逃离进程组的后代、Windows 进程树与云端停止仍 NOT_VERIFIED/UNKNOWN。不杀名称匹配的进程，不盲重试。回滚 M5 不涉及 SQLite/授权，只回退 SDK/Adapter 代码；部署仍须任务0。

@@ -6,7 +6,7 @@ use localmux_adapter_sdk::{
 use localmux_domain::{AdapterKind, CostMode, HealthStatus, ModelDescriptor};
 use serde_json::Value;
 use std::{env, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
-use tokio::{process::Command, sync::Mutex, time::timeout};
+use tokio::{process::Command, sync::Mutex};
 
 pub struct CodeBuddyAdapter {
     executable: PathBuf,
@@ -27,21 +27,13 @@ impl CodeBuddyAdapter {
         command
     }
     async fn catalog_output(&self, args: &[&str]) -> Result<Vec<u8>, AdapterError> {
-        // Do not inherit a project's model override or run its hooks during discovery.
-        let dir = tempfile::tempdir().map_err(|_| AdapterError::ProcessFailed)?;
-        let output = timeout(
+        // Shared bounded output also isolates cwd and owns the cancellation process group.
+        let output = localmux_adapter_sdk::cli::command_output(
+            self.command(),
+            args,
             Duration::from_secs(15),
-            self.command()
-                .args(args)
-                .current_dir(dir.path())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .output(),
         )
-        .await
-        .map_err(|_| AdapterError::ProcessFailed)?
-        .map_err(|_| AdapterError::ProviderUnavailable)?;
+        .await?;
         if !output.status.success() {
             return Err(map_error(
                 &serde_json::json!({"message": String::from_utf8_lossy(&output.stderr)}),

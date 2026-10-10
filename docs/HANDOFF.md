@@ -1,5 +1,7 @@
 # 交接记录
 
+2026-10-10 Gateway 可靠性 M5：SDK CLI/Codex JSONL 与目录 stdout/stderr 有界读取，Codex pending RPC 另限4MiB；Codex/Qoder/CN/CodeBuddy 复用隔离 cwd 和 owned 子进程管理。Unix 取消只清理本请求创建且仍拥有 leader 的进程组，等待/reap后不使用陈旧PID；离线假CLI证明未消费/已消费流取消、父子停止及无关进程保留。主动逃离组的后代与远端推理/计费继续未证实；Windows 当前只保留直接子句柄，原生进程树待验收。无新连接/真实推理/数据库迁移。
+
 2026-10-10 Gateway 可靠性 M4：Chat/Responses/SSE 共用来源校验，localmux 固定键/4096字节预算，标准响应ID与入站关联ID分开。HTTP/Codex 添加可信 source；无来源或累计用量、型号自述、未知 finish 不广告为事实。参数错误词表脱敏；Responses Body deadline 发 failed 且序号连续。针对性 Gateway/SDK/Codex 离线回归通过，官方 SDK 全矩阵接续 M6；无真实调用和新增迁移。
 
 2026-10-10 Gateway 可靠性 M3：0013 可空有界诊断及既有记录详情/连接状态/能力依据面板已实现。队列25秒+Adapter10秒分别测量；云端执行、非流首字及远端取消未知。旧记录不回填，默认正文关闭、store:false 保持；迁移需一致备份，旧程序回滚需匹配 DB。Rust/前端验证及 Playwright+Edge 合成 IPC 的960/800/760/1120、浅深/旧数据/忙碌/过期证据已核对，浏览器控制台无错误；真实 Provider/Windows 原生未实测。

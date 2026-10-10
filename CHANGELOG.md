@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bound CLI catalog/JSONL reads before allocation grows past 1 MiB and share isolated owned process-group cleanup across Codex/Qoder/CodeBuddy; test cancellation, malformed output, spawn failure and unrelated-process preservation without upstream calls.
+
 - Validate per-request metadata provenance, reject cumulative/unverified usage and bounded-model self reports, and cap the fixed localmux extension at 4096 bytes; correlate response/stream errors with X-Request-ID while preserving standard response IDs.
 
 - Add migration 0013 with optional bounded call diagnostics, independent queue/spacing/adapter timings and request correlation; retain opt-in body recording, store:false and legacy nulls. Extend existing history, local connection state and capability evidence panels.

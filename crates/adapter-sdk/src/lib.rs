@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod process;
 pub mod provider_http;
 use async_trait::async_trait;
 use futures_util::{stream, Stream, StreamExt};

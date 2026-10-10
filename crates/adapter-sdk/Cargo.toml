@@ -17,6 +17,9 @@ localmux-domain = { path = "../domain" }
 localmux-quota = { path = "../quota" }
 thiserror = "2"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }

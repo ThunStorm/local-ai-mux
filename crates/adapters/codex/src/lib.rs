@@ -15,8 +15,8 @@ use std::{
 };
 use tempfile::TempDir;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
+    io::{AsyncWriteExt, BufReader},
+    process::{ChildStdin, ChildStdout, Command},
     sync::Mutex,
     time::timeout,
 };
@@ -36,15 +36,11 @@ impl CodexAdapter {
     pub async fn version(&self) -> Result<String, AdapterError> {
         let output = timeout(
             Duration::from_secs(5),
-            Command::new(&self.executable).arg("--version").output(),
+            localmux_adapter_sdk::cli::raw_output(&self.executable, &["--version"]),
         )
         .await
-        .map_err(|_| AdapterError::ProcessFailed)?
-        .map_err(|_| AdapterError::ProviderUnavailable)?;
-        if !output.status.success() {
-            return Err(AdapterError::Unsupported);
-        }
-        parse_version(&String::from_utf8_lossy(&output.stdout)).ok_or(AdapterError::Unsupported)
+        .map_err(|_| AdapterError::Timeout)??;
+        parse_version(&String::from_utf8_lossy(&output)).ok_or(AdapterError::Unsupported)
     }
     pub async fn connect(&self) -> Result<Vec<ModelDescriptor>, AdapterError> {
         let version = self.version().await?;
@@ -294,7 +290,7 @@ impl Adapter for CodexAdapter {
 }
 
 struct AppServer {
-    child: Child,
+    child: localmux_adapter_sdk::process::OwnedChild,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
@@ -308,14 +304,13 @@ impl AppServer {
         let dir = tempfile::tempdir().map_err(|_| AdapterError::ProcessFailed)?;
         let mut command = Command::new(executable);
         configure_system_proxy(&mut command).await;
-        let mut child = command
+        command
             .arg("app-server")
             .current_dir(dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
+            .stderr(Stdio::null());
+        let mut child = localmux_adapter_sdk::process::OwnedChild::spawn(command)
             .map_err(|_| AdapterError::ProviderUnavailable)?;
         let stdin = child.stdin.take().ok_or(AdapterError::ProcessFailed)?;
         let stdout = BufReader::new(child.stdout.take().ok_or(AdapterError::ProcessFailed)?);
@@ -354,15 +349,13 @@ impl AppServer {
             .map_err(|_| AdapterError::ProcessFailed)
     }
     async fn read(&mut self, wait: Duration) -> Result<Value, AdapterError> {
-        let mut line = String::new();
-        let size = timeout(wait, self.stdout.read_line(&mut line))
-            .await
-            .map_err(|_| AdapterError::Timeout)?
-            .map_err(|_| AdapterError::ProcessFailed)?;
-        if size == 0 || size > 1024 * 1024 {
-            return Err(AdapterError::ProcessFailed);
-        }
-        serde_json::from_str(&line).map_err(|_| AdapterError::ProcessFailed)
+        timeout(
+            wait,
+            localmux_adapter_sdk::cli::read_json_line(&mut self.stdout),
+        )
+        .await
+        .map_err(|_| AdapterError::Timeout)??
+        .ok_or(AdapterError::ProcessFailed)
     }
     async fn request(
         &mut self,
@@ -374,6 +367,7 @@ impl AppServer {
         self.send(json!({"id":id,"method":method,"params":params}))
             .await?;
         let mut pending = Vec::new();
+        let mut pending_bytes = 0usize;
         loop {
             let message = self.read(Duration::from_secs(15)).await?;
             if message.get("id").and_then(Value::as_u64) == Some(id) {
@@ -391,8 +385,9 @@ impl AppServer {
             if message.get("id").is_some() && message.get("method").is_some() {
                 return Err(AdapterError::Unsupported);
             }
+            pending_bytes += message.to_string().len();
             pending.push(message);
-            if pending.len() > 1000 {
+            if pending.len() > 1000 || pending_bytes > 4 * 1024 * 1024 {
                 return Err(AdapterError::ProcessFailed);
             }
         }
