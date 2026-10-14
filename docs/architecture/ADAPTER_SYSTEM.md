@@ -28,3 +28,5 @@ Codex 子进程在 macOS 缺少显式代理环境时遵从现有系统固定 HTT
 2026-10-10 M4：ResponseMetadata 增加可选 actual_model_source/finish_source，Gateway 对来源、型号长度/字符、规范化名称及 usage source/scope 做白名单检查。HTTP 标准元数据来源为 provider_reported；Codex thread model 与 rerouted 分别登记 app_server_thread/app_server_rerouted，未知 finish 仍 null。第三方 Adapter 未标来源的 stop/model/usage 不得成为对外已知事实；协议 Completed 仍可以证明接收结束，无需伪造 stop。无新增数据库迁移，旧标准客户端可继续忽略 localmux。
 
 2026-10-10 M5：shared cli::read_json_line 在读取时限1MiB，目录 stdout/stderr 同样各限1MiB，Codex 等待响应的 pending 通知另限4MiB；EOF/异常 JSON/非零退出不能冒充 Completed。Codex 版本读取与 CodeBuddy 目录复用有界且隔离 cwd 的公开命令执行。Unix 使用为本请求创建的新进程组；Drop 只在 Child.id 仍有效且 getpgid=自身PID时清理组，已 wait/reap 的句柄不使用旧PID，保留 Tokio 直接子进程清理。离线 fixture 验证父子停止和无关进程保留；主动逃离进程组的后代、Windows 进程树与云端停止仍 NOT_VERIFIED/UNKNOWN。不杀名称匹配的进程，不盲重试。回滚 M5 不涉及 SQLite/授权，只回退 SDK/Adapter 代码；部署仍须任务0。
+
+2026-10-14 Codex：移除 system/developer/effort 的精确版本白名单，改从当前安装 CLI 自动导出非 experimental 公开 Schema，逐字段核对 start/resume/turn 映射，推理档位取协议与型号目录交集。导出失败不隐藏用户模型，能力保持 UNKNOWN 并记录安全原因，默认单 user 省略未核对指令；用户前置规则不可丢弃。10秒 owned 进程、三个普通文件各1MiB、本地引用深度8、临时清理与原五分钟 Gateway 目录刷新共同限定开销；真实效果仍未验证，不跨应用自动改快照。详见 [Codex Adapter](../adapters/CODEX.md#supported-versions)。

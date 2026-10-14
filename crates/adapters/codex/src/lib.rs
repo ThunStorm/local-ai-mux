@@ -15,7 +15,7 @@ use std::{
 };
 use tempfile::TempDir;
 use tokio::{
-    io::{AsyncWriteExt, BufReader},
+    io::{AsyncReadExt, AsyncWriteExt, BufReader},
     process::{ChildStdin, ChildStdout, Command},
     sync::Mutex,
     time::timeout,
@@ -44,6 +44,7 @@ impl CodexAdapter {
     }
     pub async fn connect(&self) -> Result<Vec<ModelDescriptor>, AdapterError> {
         let version = self.version().await?;
+        let protocol = self.public_protocol().await;
         let mut process = AppServer::start(&self.executable).await?;
         let (account, _) = process
             .request("account/read", json!({"refreshToken":false}))
@@ -51,7 +52,47 @@ impl CodexAdapter {
         if account["account"].is_null() && account["requiresOpenaiAuth"] == true {
             return Err(AdapterError::AuthRequired);
         }
-        process.models(&version).await
+        process.models(&version, protocol).await
+    }
+    async fn public_protocol(&self) -> PublicProtocol {
+        // The installed CLI owns its schema. Refresh alongside each catalog read,
+        // including after in-place upgrades; no version allowlist or persisted fallback.
+        let Ok(dir) = tempfile::tempdir() else {
+            return PublicProtocol::default();
+        };
+        let Some(out) = dir.path().to_str() else {
+            return PublicProtocol::default();
+        };
+        let result = localmux_adapter_sdk::cli::command_output(
+            Command::new(&self.executable),
+            &["app-server", "generate-json-schema", "--out", out],
+            Duration::from_secs(10),
+        )
+        .await;
+        if !result.is_ok_and(|output| output.status.success()) {
+            return PublicProtocol::default();
+        }
+        let start_path = dir.path().join("v2/ThreadStartParams.json");
+        let resume_path = dir.path().join("v2/ThreadResumeParams.json");
+        let turn_path = dir.path().join("v2/TurnStartParams.json");
+        let (start, resume, turn) = tokio::join!(
+            read_public_schema(&start_path),
+            read_public_schema(&resume_path),
+            read_public_schema(&turn_path),
+        );
+        PublicProtocol {
+            system: instruction_field(&start, "baseInstructions")
+                && instruction_field(&resume, "baseInstructions"),
+            developer: instruction_field(&start, "developerInstructions")
+                && instruction_field(&resume, "developerInstructions"),
+            effort: turn
+                .as_ref()
+                .filter(|schema| schema["type"] == "object")
+                .and_then(|schema| {
+                    public_strings(&schema["properties"]["effort"], schema, 0, 1, true)
+                }),
+            observed: true,
+        }
     }
     async fn prepare_turn(
         &self,
@@ -60,6 +101,7 @@ impl CodexAdapter {
     ) -> Result<(AppServer, String, String, Vec<Value>, Option<String>), AdapterError> {
         let instructions = request.text_instructions(true)?;
         let version = self.version().await?;
+        let protocol = self.public_protocol().await;
         let model = request
             .model
             .strip_prefix("codex/")
@@ -69,15 +111,16 @@ impl CodexAdapter {
         }
         let mut process = AppServer::start(&self.executable).await?;
         let chat = process
-            .models(&version)
+            .models(&version, protocol)
             .await?
             .into_iter()
             .find(|m| m.id == request.model)
             .ok_or(AdapterError::ModelUnavailable)?
             .chat;
         request.parameters.validate(&chat)?;
-        if (instructions.system.is_some() || instructions.developer.is_some())
-            && chat.system != localmux_domain::Support::Supported
+        if (instructions.system.is_some() && chat.system != localmux_domain::Support::Supported)
+            || (instructions.developer.is_some()
+                && chat.developer != localmux_domain::Support::Supported)
         {
             return Err(AdapterError::UnsupportedMessages);
         }
@@ -111,8 +154,12 @@ impl CodexAdapter {
         };
         params["config"] = config;
         // Explicit client instructions replace the corresponding default instruction layers.
-        params["baseInstructions"] = json!(instructions.system.unwrap_or_default());
-        params["developerInstructions"] = json!(instructions.developer.unwrap_or_default());
+        if chat.system == localmux_domain::Support::Supported {
+            params["baseInstructions"] = json!(instructions.system.unwrap_or_default());
+        }
+        if chat.developer == localmux_domain::Support::Supported {
+            params["developerInstructions"] = json!(instructions.developer.unwrap_or_default());
+        }
         let (thread, _) = process.request(method, params).await?;
         let actual_model = thread["model"].as_str().map(str::to_owned);
         let id = thread["thread"]["id"]
@@ -392,23 +439,62 @@ impl AppServer {
             }
         }
     }
-    async fn models(&mut self, version: &str) -> Result<Vec<ModelDescriptor>, AdapterError> {
+    async fn models(
+        &mut self,
+        version: &str,
+        protocol: PublicProtocol,
+    ) -> Result<Vec<ModelDescriptor>, AdapterError> {
         let (result, _) = self
             .request("model/list", json!({"limit":100,"includeHidden":false}))
             .await?;
         let mut models = parse_models(&result)?;
         for model in &mut models {
-            model.chat.source = "公开 App Server 型号元数据与离线映射；本轮真实效果未验证".into();
-            model.chat.system = if version == "0.160.0" {
+            model.chat.source =
+                "当前安装 CLI 的公开 Schema、型号元数据与 Adapter 映射；真实效果未验证".into();
+            model.chat.system = if protocol.system {
                 localmux_domain::Support::Supported
             } else {
                 localmux_domain::Support::Unknown
             };
-            model.chat.developer = model.chat.system;
-            if version != "0.160.0" {
-                model.chat.reasoning_efforts.clear();
+            model.chat.developer = if protocol.developer {
+                localmux_domain::Support::Supported
+            } else {
+                localmux_domain::Support::Unknown
+            };
+            match &protocol.effort {
+                None => model.chat.reasoning_efforts.clear(),
+                Some(values) if !values.is_empty() => model
+                    .chat
+                    .reasoning_efforts
+                    .retain(|effort| values.contains(effort)),
+                Some(_) => {}
+            }
+            if model
+                .chat
+                .default_reasoning_effort
+                .as_ref()
+                .is_some_and(|effort| !model.chat.reasoning_efforts.contains(effort))
+            {
+                model.chat.default_reasoning_effort = None;
             }
             model.chat.describe(Some(version.into()), "app_server_v2");
+            for name in ["system", "developer", "reasoning_effort"] {
+                if let Some(detail) = model.chat.details.get_mut(name) {
+                    for evidence in &mut detail.evidence {
+                        evidence.source_type = "installed_public_schema_and_adapter_mapping".into();
+                    }
+                    if detail.effective_support == localmux_domain::Support::Unknown {
+                        detail.unknown_reason = Some(
+                            if protocol.observed {
+                                "public_schema_field_unverified"
+                            } else {
+                                "public_schema_unavailable"
+                            }
+                            .into(),
+                        );
+                    }
+                }
+            }
             model
                 .chat
                 .public_candidate("json_schema", "guarantee_unverified");
@@ -548,6 +634,107 @@ fn map_turn_error(error: &Value) -> AdapterError {
     map_rpc_error(error)
 }
 
+#[derive(Default)]
+struct PublicProtocol {
+    system: bool,
+    developer: bool,
+    effort: Option<Vec<String>>,
+    observed: bool,
+}
+
+async fn read_public_schema(path: &Path) -> Option<Value> {
+    const MAX_SCHEMA_BYTES: u64 = 1024 * 1024;
+    let metadata = tokio::fs::symlink_metadata(path).await.ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_SCHEMA_BYTES {
+        return None;
+    }
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let mut bytes = Vec::new();
+    file.take(MAX_SCHEMA_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .ok()?;
+    if bytes.len() as u64 > MAX_SCHEMA_BYTES {
+        return None;
+    }
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn instruction_field(schema: &Option<Value>, name: &str) -> bool {
+    let Some(schema) = schema else { return false };
+    schema["type"] == "object"
+        && public_strings(&schema["properties"][name], schema, 0, 0, false).is_some()
+}
+
+fn public_strings(
+    field: &Value,
+    root: &Value,
+    depth: usize,
+    minimum: u64,
+    allow_enum: bool,
+) -> Option<Vec<String>> {
+    // Only local definitions and known string/effort-enum contracts are mapped. Unknown
+    // schemas/constraints stay unknown instead of approximating a JSON Schema validator.
+    let string_type = field["type"] == "string"
+        || field["type"]
+            .as_array()
+            .is_some_and(|types| types.iter().any(|t| t == "string"));
+    if depth > 8
+        || (field.get("type").is_some() && !string_type)
+        || (string_type && field.get("anyOf").is_some())
+        || [
+            "const",
+            "pattern",
+            "maxLength",
+            "allOf",
+            "oneOf",
+            "not",
+            "if",
+            "format",
+        ]
+        .iter()
+        .any(|key| field.get(*key).is_some())
+        || (field.get("enum").is_some() && (!allow_enum || !string_type))
+        || field
+            .get("minLength")
+            .is_some_and(|length| length.as_u64().is_none_or(|length| length > minimum))
+    {
+        return None;
+    }
+    if let Some(reference) = field["$ref"].as_str() {
+        return reference
+            .strip_prefix('#')
+            .and_then(|pointer| root.pointer(pointer))
+            .and_then(|target| public_strings(target, root, depth + 1, minimum, allow_enum));
+    }
+    if string_type {
+        return match field.get("enum") {
+            None => Some(Vec::new()),
+            Some(values) if allow_enum => {
+                let values = values.as_array()?;
+                if values.is_empty() {
+                    return None;
+                }
+                values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_owned)
+                    })
+                    .collect()
+            }
+            Some(_) => None,
+        };
+    }
+    field["anyOf"].as_array().and_then(|types| {
+        types
+            .iter()
+            .find_map(|part| public_strings(part, root, depth + 1, minimum, allow_enum))
+    })
+}
+
 fn codex_capabilities(item: &Value) -> localmux_domain::ChatCapabilities {
     let mut chat = localmux_domain::ChatCapabilities::single_turn();
     chat.native_input_modalities = item["inputModalities"]
@@ -684,6 +871,28 @@ fn parse_quotas(result: &Value, observed_at: i64) -> Vec<QuotaBucket> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn public_schema_constraints_and_reference_cycles_stay_unknown() {
+        let root = json!({"definitions":{"cycle":{"$ref":"#/definitions/cycle"}}});
+        for field in [
+            json!({"type":"string","maxLength":10}),
+            json!({"type":"string","pattern":"^fixed$"}),
+            json!({"type":"string","minLength":2}),
+            json!({"anyOf":[{"type":"string"}],"enum":["low"]}),
+            json!({"type":"number","$ref":"#/definitions/text"}),
+            json!({"type":"string","anyOf":[{"enum":["low"]}]}),
+            json!({"$ref":"https://example.invalid/schema"}),
+            json!({"$ref":"#/definitions/cycle"}),
+        ] {
+            assert!(public_strings(&field, &root, 0, 1, true).is_none());
+        }
+        let effort = json!({"type":"string","minLength":1,"enum":["low","high"]});
+        assert_eq!(
+            public_strings(&effort, &root, 0, 1, true),
+            Some(vec!["low".into(), "high".into()])
+        );
+        assert!(public_strings(&effort, &root, 0, 0, false).is_none());
+    }
     #[test]
     fn fixed_system_proxy_is_validated_and_disabled_proxy_is_ignored() {
         let snapshot = "HTTPSEnable : 1\nHTTPSProxy : 127.0.0.1\nHTTPSPort : 10808";

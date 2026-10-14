@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Automatically derive Codex instruction and effort support from the installed CLI public schema on catalog refresh and invocation, replacing version allowlists; bound schema export/reads, intersect model efforts, omit unverified optional fields for user-only defaults and fail closed for explicit instructions.
+
 - Verify and deploy the final macOS reliability tree after the parallel tray package: migrate to schema 13 while retaining the stable key/scopes, connections, recording setting and existing history; preserve unverified upstream/Windows/ARM64 boundaries.
 
 - Gate reliability with isolated official Python/TypeScript SDK servers (25 contract cases each), 400/429/503 and cancellation/truncation coverage, direct loopback transport, bounded diagnostics/storage measurements and the existing cross-platform CI.

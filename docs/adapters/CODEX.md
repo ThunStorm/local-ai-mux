@@ -14,7 +14,11 @@ macOS 与 Windows 的可执行文件路径均可检测；本机仅在 macOS 上�
 
 ## Supported versions
 
-2026-10-06 本机为 `codex-cli 0.160.0`（早期 fixture 为 `0.155.0-alpha.16.4`）。本轮 0.160.0 的两个实际型号单轮流式结果见交接；这不建立完整版本兼容范围，界面保留「版本未验证」，连接失败明确报错。
+2026-10-14：能力判断改为当前安装 CLI 的公开 Schema 自动协商，取消版本白名单。每次连接/目录刷新/调用预检执行 `codex app-server generate-json-schema --out <隔离临时目录>`（不启用 experimental 字段），按 v2/ThreadStartParams、ThreadResumeParams 中可保留任意字符串的 baseInstructions/developerInstructions 独立声明 system/developer；两种线程操作均须支持。turn/start.effort 支持公开字符串/本地引用/可空类型/枚举时，与精确 model/list 档位取交集；默认档位不在有效列表则省略。新版本无需重新发布 LocalAiMux 来更新版本白名单。
+
+导出复用 owned 进程、有界 stdout/stderr 和10秒期限，只读取三个普通文件、每个最多1MiB；临时产物随调用清理。缺失、失败、损坏、循环引用或未映射约束保持 UNKNOWN，details.unknown_reason 区分 public_schema_unavailable / public_schema_field_unverified，证据来源为 installed_public_schema_and_adapter_mapping，live_verified 仍 false。无持久协议缓存或“默认全部支持”；单 user 默认调用省略未核对指令字段，有前置指令时明确拒绝，不降级成 user。历史/工具/图像、输出上限与 JSON 保证不因此开放。
+
+复用 Gateway 五分钟目录刷新；每次实际调用另核对当前 CLI，因此原路径升级/导出恢复会重新识别。至简等持久缓存接口能力的消费端仍需重新读取并保存快照；LocalAiMux 不跨应用静默修改配置或伪造业务探测证据。当前本机 CLI 为 0.162.0-alpha.17.2，真实生成验收仍独立；0.160.0 的两个实际型号单轮流式结果见交接，界面保留「版本未验证」。无需重新连接、扩权或重建 Key。
 
 ## Connection/auth strategy
 
