@@ -28,3 +28,7 @@ Phase 6 增加动态虚拟模型 `free`、`cheap`、`balanced`、`best`。只有
 localmux 采用固定键集合，JSON 不超过 4096 字节：原 finish_reason/usage/actual_model/normalization/usage_status/cancellation_guarantee 保留，兼容添加 source、response_id、timing 和 upstream_cancel_verified。request_id 与 HTTP X-Request-ID、调用记录关联 ID 一致；Chat/Responses 标准 id 与扩展 response_id 仍表示响应 ID，避免把请求关联误作续接 ID。timing 是可空本机测量快照，语义与记录诊断相同，不包含 Prompt/RPC/连接凭据。SSE 与非流统一来源与未知值；Responses 在整体 Body deadline 到达时发送 response.failed，序号继续本次流，不能发送逾期 completed。没有新增强制请求头或字段。
 
 M2/M4 门禁补强：catalog.observed_at 在实际刷新时保存，读取不随系统时钟变化重新推算。最终 completed 的 usage 先按来源/口径校验，再采用最近一次可信 request/last_turn 快照；累计/未知来源不能抹掉已报告本次用量。终态记录、扩展与标准 usage 保持一致，没有可信快照时均为 null。
+
+2026-10-14 缓存用量：可信 provider_reported + request/last_turn 的 cached_input_tokens 同源投影到 Chat `usage.prompt_tokens_details.cached_tokens`（非流式及 include_usage SSE）和 Responses `usage.input_tokens_details.cached_tokens`（含流式终态 response），兼容保留 `localmux.usage`。缓存是 input 的子集，不加到 input/total；缓存缺失、无可信 input 或超过 input 时省略标准细分、扩展为 null，明确报告的零保留。无可信用量时 usage=null，session_total 不能覆盖最近可信快照。此契约不保证缓存命中、延迟或订阅额度收益。
+
+v2 `chat.details.session_resume/prompt_cache_control` 的可选 `api_support` 按完整端点路径声明有效能力。Chat 原生续接 UNSUPPORTED；Responses 按精确型号与当前 Adapter 公开契约为 SUPPORTED/UNSUPPORTED/UNKNOWN，证据过期 SUPPORTED 降 UNKNOWN；仍需 owner/最新成功 Response/相同模型与 Adapter/原生 ID。两个入口的显式缓存控制均 UNSUPPORTED（gateway strict schema），底层 native UNKNOWN。缓存计数不开放 prompt_cache_options/prompt_cache_key 等字段，未知字段继续400；无隐式线程聚合。详见[实施与验收](../LOCALAIMUX_PREFIX_CACHE_AND_SESSION_CAPABILITY_ASSESSMENT.md#六2026-10-14-实施与验收)。

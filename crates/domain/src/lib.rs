@@ -165,6 +165,9 @@ pub struct CapabilityDetail {
     pub freshness: Option<String>,
     #[serde(default)]
     pub unknown_reason: Option<String>,
+    /// Effective support per Gateway endpoint; no implicit Chat session semantics.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub api_support: BTreeMap<String, Support>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CapabilityEvidence {
@@ -217,6 +220,7 @@ impl ChatCapabilities {
             ("finish_reason", Support::Supported),
             ("cancellation", Support::Unknown),
             ("session_resume", Support::Unknown),
+            ("prompt_cache_control", Support::Unsupported),
         ] {
             let public = if effective == Support::Supported {
                 Support::Supported
@@ -274,6 +278,49 @@ impl ChatCapabilities {
             .unwrap()
             .constraints
             .guarantee = Some("local_receive_only; upstream_generation_and_billing_unknown".into());
+        self.describe_session_resume(Support::Unknown);
+        let cache = self.details.get_mut("prompt_cache_control").unwrap();
+        cache.api_support = BTreeMap::from([
+            ("/v1/chat/completions".into(), Support::Unsupported),
+            ("/v1/responses".into(), Support::Unsupported),
+        ]);
+        cache.limiting_layer = Some("gateway".into());
+        cache.reason_code = Some("strict_schema_no_cache_control".into());
+        for evidence in &mut cache.evidence {
+            evidence.source_type = "gateway_contract_and_fixture".into();
+            evidence.protocol = "openai_compat_v1".into();
+            evidence.version = None;
+        }
+    }
+    pub fn describe_session_resume(&mut self, support: Support) {
+        let Some(detail) = self.details.get_mut("session_resume") else {
+            return;
+        };
+        detail.effective_support = support;
+        detail.public_interface_support = if support == Support::Supported {
+            Support::Supported
+        } else {
+            Support::Unknown
+        };
+        detail.adapter_state = if support == Support::Supported {
+            "IMPLEMENTED"
+        } else {
+            "NOT_IMPLEMENTED"
+        }
+        .into();
+        detail.limiting_layer = (support != Support::Supported).then(|| "adapter".into());
+        detail.reason_code =
+            (support != Support::Supported).then(|| "native_resume_unverified_or_unmapped".into());
+        detail.unknown_reason =
+            (support == Support::Unknown).then(|| "native_resume_unverified_or_unmapped".into());
+        detail.api_support = BTreeMap::from([
+            ("/v1/chat/completions".into(), Support::Unsupported),
+            ("/v1/responses".into(), support),
+        ]);
+        detail.constraints.guarantee = Some(
+            "same_owner_latest_completed_response_same_model_and_adapter_native_session_required"
+                .into(),
+        );
     }
     /// Expiry changes effective claims, never the native model's inferred capabilities.
     pub fn expire_evidence(&mut self, at: i64) {
@@ -298,6 +345,11 @@ impl ChatCapabilities {
                 detail.effective_support = Support::Unknown;
                 detail.unknown_reason = Some("evidence_expired_or_undated".into());
                 detail.reason_code = Some("evidence_expired_or_undated".into());
+                for support in detail.api_support.values_mut() {
+                    if *support == Support::Supported {
+                        *support = Support::Unknown;
+                    }
+                }
                 match name.as_str() {
                     "system" => self.system = Support::Unknown,
                     "developer" => self.developer = Support::Unknown,
@@ -348,6 +400,25 @@ pub struct Session {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resume_evidence_expires_without_opening_chat_or_cache_controls() {
+        use super::*;
+        let mut chat = ChatCapabilities::single_turn();
+        chat.describe(Some("fixture".into()), "offline");
+        chat.describe_session_resume(Support::Supported);
+        chat.expire_evidence(i64::MAX);
+        let resume = &chat.details["session_resume"];
+        assert_eq!(resume.effective_support, Support::Unknown);
+        assert_eq!(resume.api_support["/v1/responses"], Support::Unknown);
+        assert_eq!(
+            resume.api_support["/v1/chat/completions"],
+            Support::Unsupported
+        );
+        assert_eq!(
+            chat.details["prompt_cache_control"].effective_support,
+            Support::Unsupported
+        );
+    }
     #[test]
     fn unknown_is_not_free() {
         assert_ne!(super::CostMode::Unknown, super::CostMode::Free);

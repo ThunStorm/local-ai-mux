@@ -81,6 +81,7 @@ impl CodexAdapter {
             read_public_schema(&turn_path),
         );
         PublicProtocol {
+            session_resume: instruction_field(&resume, "threadId"),
             system: instruction_field(&start, "baseInstructions")
                 && instruction_field(&resume, "baseInstructions"),
             developer: instruction_field(&start, "developerInstructions")
@@ -478,7 +479,14 @@ impl AppServer {
                 model.chat.default_reasoning_effort = None;
             }
             model.chat.describe(Some(version.into()), "app_server_v2");
-            for name in ["system", "developer", "reasoning_effort"] {
+            model
+                .chat
+                .describe_session_resume(if protocol.session_resume {
+                    localmux_domain::Support::Supported
+                } else {
+                    localmux_domain::Support::Unknown
+                });
+            for name in ["system", "developer", "reasoning_effort", "session_resume"] {
                 if let Some(detail) = model.chat.details.get_mut(name) {
                     for evidence in &mut detail.evidence {
                         evidence.source_type = "installed_public_schema_and_adapter_mapping".into();
@@ -636,6 +644,7 @@ fn map_turn_error(error: &Value) -> AdapterError {
 
 #[derive(Default)]
 struct PublicProtocol {
+    session_resume: bool,
     system: bool,
     developer: bool,
     effort: Option<Vec<String>>,

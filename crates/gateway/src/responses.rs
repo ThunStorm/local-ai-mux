@@ -12,7 +12,7 @@ use axum::{
 use futures_util::StreamExt;
 use localmux_adapter_sdk::{
     Adapter, AdapterError, FinishReason, NormalizedRequest, NormalizedResponse, ResponseMetadata,
-    StreamEvent,
+    StreamEvent, TokenUsage,
 };
 use localmux_api_types::{response_input_text, ResponsesRequest};
 use localmux_domain::{CostMode, HealthStatus};
@@ -254,7 +254,13 @@ fn response_object(
         result.finish_reason,
         FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter
     );
-    let usage = result.usage.as_ref().map(|u| json!({"input_tokens":u.input_tokens,"output_tokens":u.output_tokens,"total_tokens":u.total_tokens}));
+    let usage = result.usage.clone().and_then(TokenUsage::validated).map(|u| {
+        let mut value = json!({"input_tokens":u.input_tokens,"output_tokens":u.output_tokens,"total_tokens":u.total_tokens});
+        if let Some(cached) = u.cached_input_tokens {
+            value["input_tokens_details"] = json!({"cached_tokens":cached});
+        }
+        value
+    });
     json!({"id":id,"object":"response","created_at":created,"status":if incomplete { "incomplete" } else { "completed" },"error":null,"incomplete_details":if incomplete { json!({"reason": match result.finish_reason { FinishReason::Length => "max_output_tokens", FinishReason::ContentFilter => "content_filter", _ => "cancelled" }}) } else { Value::Null },
         "model":model,"previous_response_id":previous,"metadata":metadata,
         "output":[{"id":message_id,"type":"message","status":if incomplete { "incomplete" } else { "completed" },"role":"assistant","content":[{"type":"output_text","text":text,"annotations":[]}]}],

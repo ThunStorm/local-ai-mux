@@ -117,6 +117,7 @@ fn fixture_metadata(model: &str) -> localmux_adapter_sdk::ResponseMetadata {
             input_tokens: Some(2),
             output_tokens: Some(3),
             total_tokens: Some(5),
+            cached_input_tokens: Some(1),
             source: "provider_reported".into(),
             scope: "request".into(),
             ..Default::default()

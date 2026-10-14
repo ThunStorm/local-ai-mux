@@ -13,6 +13,7 @@ async fn schema_refresh_handles_future_versions_missing_fields_and_recovery() {
         ("0.999.0", "missing_system", Unknown, Supported),
         ("0.999.0", "missing_developer", Supported, Unknown),
         ("0.999.0", "missing_resume", Unknown, Unknown),
+        ("0.999.0", "missing_thread_id", Supported, Supported),
         ("0.999.0", "unavailable", Unknown, Unknown),
         ("0.999.0", "malformed", Unknown, Unknown),
         ("0.999.0", "oversized", Unknown, Unknown),
@@ -40,6 +41,18 @@ async fn schema_refresh_handles_future_versions_missing_fields_and_recovery() {
         let models = adapter.connect().await.unwrap();
         assert_eq!(models[0].chat.system, system, "{case}");
         assert_eq!(models[0].chat.developer, developer, "{case}");
+        assert_eq!(
+            models[0].chat.details["session_resume"].effective_support,
+            if matches!(
+                case,
+                "unavailable" | "malformed" | "oversized" | "missing_resume" | "missing_thread_id"
+            ) {
+                Unknown
+            } else {
+                Supported
+            },
+            "{case}"
+        );
         let efforts: &[&str] = match case {
             "unavailable" | "no_effort" | "cyclic" => &[],
             "restricted_effort" => &["low"],
@@ -252,7 +265,11 @@ async fn layered_instructions_effort_and_last_turn_usage_preserve_public_semanti
         },
     };
     let response = adapter.invoke(request).await.unwrap();
-    assert_eq!(response.metadata.usage.unwrap().total_tokens, Some(15));
+    let usage = response.metadata.usage.unwrap();
+    assert_eq!(usage.total_tokens, Some(15));
+    assert_eq!(usage.input_tokens, Some(10));
+    assert_eq!(usage.cached_input_tokens, Some(3));
+    assert_eq!(usage.scope, "last_turn");
     assert_eq!(response.metadata.finish_reason, FinishReason::Unknown);
     assert_eq!(
         response.metadata.actual_model.as_deref(),
@@ -261,4 +278,36 @@ async fn layered_instructions_effort_and_last_turn_usage_preserve_public_semanti
     let models = adapter.list_models().await.unwrap();
     assert_eq!(models[0].chat.native_input_modalities, ["text", "image"]);
     assert_eq!(models[0].chat.reasoning_efforts, ["low", "high"]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cache_usage_missing_invalid_and_unknown_are_not_zero_filled() {
+    use localmux_adapter_sdk::{Adapter, NormalizedRequest};
+    let adapter = localmux_adapter_codex::CodexAdapter::new(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/app_server.sh"),
+    );
+    for prompt in [
+        "no-cache-fixture",
+        "invalid-cache-fixture",
+        "unknown-usage-fixture",
+    ] {
+        let response = adapter
+            .invoke(NormalizedRequest {
+                model: "codex/fixture-model".into(),
+                prompt: prompt.into(),
+                messages: vec![],
+                parameters: Default::default(),
+            })
+            .await
+            .unwrap();
+        if prompt == "unknown-usage-fixture" {
+            assert!(response.metadata.usage.is_none());
+        } else {
+            let usage = response.metadata.usage.unwrap();
+            assert_eq!(usage.cached_input_tokens, None);
+            assert_eq!(usage.input_tokens, Some(10));
+            assert_eq!(usage.total_tokens, Some(15));
+        }
+    }
 }

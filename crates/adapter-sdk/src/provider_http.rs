@@ -326,6 +326,7 @@ fn http_capabilities(id: &str, item: &Value, registry: Option<&Value>) -> ChatCa
         capabilities.source = "公开模型元数据；真实参数效果尚未实测".into();
     }
     capabilities.describe(None, "openai_chat_http");
+    capabilities.describe_session_resume(Support::Unsupported);
     capabilities
 }
 fn frame_end(buffer: &[u8]) -> Option<(usize, usize)> {

@@ -74,6 +74,12 @@ pub struct Usage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct PromptTokensDetails {
+    pub cached_tokens: u64,
 }
 
 pub fn text_content(value: &Value) -> Option<&str> {

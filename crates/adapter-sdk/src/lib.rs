@@ -255,7 +255,11 @@ pub struct ResponseMetadata {
     pub finish_source: Option<String>,
 }
 impl TokenUsage {
-    pub fn validated(self) -> Option<Self> {
+    pub fn validated(mut self) -> Option<Self> {
+        // Cached tokens are a subset of input, never an additional token total.
+        self.cached_input_tokens = self
+            .cached_input_tokens
+            .filter(|cached| self.input_tokens.is_some_and(|input| *cached <= input));
         (self.source == "provider_reported"
             && matches!(self.scope.as_str(), "request" | "last_turn"))
         .then_some(self)
@@ -338,11 +342,16 @@ pub async fn collect_events(mut events: EventStream) -> Result<NormalizedRespons
                 }
                 response.text.push_str(&text);
             }
-            StreamEvent::Usage(usage) => response.metadata.usage = Some(usage),
+            StreamEvent::Usage(usage) => {
+                if let Some(usage) = usage.validated() {
+                    response.metadata.usage = Some(usage);
+                }
+            }
             StreamEvent::Completed(mut metadata) => {
                 if completed {
                     return Err(AdapterError::ProcessFailed);
                 }
+                metadata = metadata.validated();
                 metadata.usage = metadata.usage.or(response.metadata.usage.take());
                 response.metadata = metadata;
                 completed = true;
@@ -542,6 +551,35 @@ mod tests {
 #[cfg(test)]
 mod provenance_tests {
     use super::*;
+    #[tokio::test]
+    async fn collector_retains_last_turn_cache_when_later_usage_is_cumulative() {
+        let last = TokenUsage {
+            input_tokens: Some(10),
+            output_tokens: Some(4),
+            total_tokens: Some(14),
+            cached_input_tokens: Some(3),
+            source: "provider_reported".into(),
+            scope: "last_turn".into(),
+            ..Default::default()
+        };
+        let mut total = last.clone();
+        total.scope = "session_total".into();
+        total.total_tokens = Some(999);
+        let response = collect_events(Box::pin(futures_util::stream::iter(vec![
+            Ok(StreamEvent::Usage(last)),
+            Ok(StreamEvent::Usage(total.clone())),
+            Ok(StreamEvent::Completed(ResponseMetadata {
+                usage: Some(total),
+                ..Default::default()
+            })),
+        ])))
+        .await
+        .unwrap();
+        let usage = response.metadata.usage.unwrap();
+        assert_eq!(usage.total_tokens, Some(14));
+        assert_eq!(usage.cached_input_tokens, Some(3));
+    }
+
     #[test]
     fn unverified_cumulative_or_oversized_metadata_is_not_advertised_as_a_fact() {
         let metadata = ResponseMetadata {

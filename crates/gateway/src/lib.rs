@@ -1184,11 +1184,17 @@ fn protocol_error(code: &str, param: &str, reason: &str, layer: &str) -> Respons
     (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":{"message":"Request cannot be honored by the selected public interface","type":"localmux_error","code":code,"error_code":code,"param":param,"reason_code":reason,"limiting_layer":layer,"retryable":false,"request_id":Uuid::new_v4().to_string()}}))).into_response()
 }
 fn wire_usage(usage: Option<&TokenUsage>) -> Option<Usage> {
-    usage.map(|usage| Usage {
-        prompt_tokens: usage.input_tokens,
-        completion_tokens: usage.output_tokens,
-        total_tokens: usage.total_tokens,
-    })
+    usage
+        .cloned()
+        .and_then(TokenUsage::validated)
+        .map(|usage| Usage {
+            prompt_tokens: usage.input_tokens,
+            completion_tokens: usage.output_tokens,
+            total_tokens: usage.total_tokens,
+            prompt_tokens_details: usage
+                .cached_input_tokens
+                .map(|cached_tokens| localmux_api_types::PromptTokensDetails { cached_tokens }),
+        })
 }
 fn wire_metadata(
     metadata: &ResponseMetadata,

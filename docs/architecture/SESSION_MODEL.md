@@ -44,3 +44,5 @@ request_bytes 是 Gateway 收到的 JSON Body 字节；非流 response_bytes 是
 本机 IPC 连接状态只根据已注册 Adapter 的文件/健康、lane 占用、执行计数及冷却得出 ACTIVE/IDLE/BUSY/COOLDOWN/UNAVAILABLE，含来源/观测时间；不自动运行模型或扩大授权。HTTP 能力目录只对 Key 已可见型号附带本机状态。客户端应把超过 30 秒的 GUI 状态视为过期，空闲不是账户/型号推理通过。
 
 回滚需要先停止且确认任务为 0，保留升级后 DB/正文备份，再恢复 M3 前 DB 与匹配旧程序；旧 SQLx 程序不能直接打开含 0013 的数据库。不要在用户数据库删列/篡改迁移账本，升级后新增记录先保留。
+
+2026-10-14：能力目录 `chat.details.session_resume.api_support` 分别报告 Chat（UNSUPPORTED）和 Responses 的当前 Adapter 契约；不替代本节 owner、最新成功响应、模型/Adapter 黏性和原生 ID 门禁。prompt_cache_control 在两入口均 UNSUPPORTED；报告 cached tokens 与续接/正文录制是独立事实，无全局隐藏会话，无新迁移或历史回填。

@@ -58,6 +58,11 @@ impl CodeBuddyAdapter {
         }
         chat.source = "公开 CLI 参数与离线映射；真实效果未验证".into();
         chat.describe(Some(version), "headless_stream_json");
+        chat.describe_session_resume(if help.contains("--resume") {
+            localmux_domain::Support::Supported
+        } else {
+            localmux_domain::Support::Unknown
+        });
         for name in [
             "temperature",
             "top_p",

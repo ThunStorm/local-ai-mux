@@ -20,7 +20,9 @@ if 'generate-json-schema' in sys.argv:
     if SCHEMA_CASE == 'missing_developer':
         del instructions['properties']['developerInstructions']
     for name in ('ThreadStartParams', 'ThreadResumeParams'):
-        value = dict(instructions)
+        value = json.loads(json.dumps(instructions))
+        if name == 'ThreadResumeParams': value['properties']['threadId'] = {'type': 'string'}
+        if SCHEMA_CASE == 'missing_thread_id': value['properties'].pop('threadId', None)
         if SCHEMA_CASE == 'missing_resume' and name == 'ThreadResumeParams':
             value = {'type': 'object', 'properties': {}}
         text = json.dumps(value)
@@ -77,8 +79,12 @@ for line in sys.stdin:
             continue
         emit({'method': 'item/agentMessage/delta', 'params': dict(base, delta='fixture reply')})
         emit({'method': 'item/completed', 'params': dict(base, item={'type': 'agentMessage', 'text': 'fixture reply'})})
+        last = {'inputTokens': 10, 'outputTokens': 5, 'totalTokens': 15, 'reasoningOutputTokens': 2, 'cachedInputTokens': 3}
+        if prompt == 'no-cache-fixture': last.pop('cachedInputTokens')
+        if prompt == 'invalid-cache-fixture': last['cachedInputTokens'] = 11
+        if prompt == 'unknown-usage-fixture': last = {}
         for _ in range(2):
-            emit({'method': 'thread/tokenUsage/updated', 'params': dict(base, tokenUsage={'last': {'inputTokens': 10, 'outputTokens': 5, 'totalTokens': 15, 'reasoningOutputTokens': 2, 'cachedInputTokens': 3}, 'total': {'inputTokens': 1000, 'outputTokens': 500, 'totalTokens': 1500}})})
+            emit({'method': 'thread/tokenUsage/updated', 'params': dict(base, tokenUsage={'last': last, 'total': {'inputTokens': 1000, 'outputTokens': 500, 'totalTokens': 1500}})})
         emit({'method': 'turn/completed', 'params': dict(base, turn={'status': 'completed'})})
         continue
     else: raise AssertionError(method)

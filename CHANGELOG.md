@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Project validated per-request cached input counts into standard Chat/Responses usage details while retaining the localmux extension, unknown values and unchanged totals; preserve the last trustworthy usage snapshot across cumulative completion events.
+- Declare endpoint-specific native session resume and unsupported explicit prompt-cache control in the existing v2 capability details, with current public-interface evidence, expiry and strict-schema regression coverage; retain stateless Chat and existing Responses isolation.
+
 - Automatically derive Codex instruction and effort support from the installed CLI public schema on catalog refresh and invocation, replacing version allowlists; bound schema export/reads, intersect model efforts, omit unverified optional fields for user-only defaults and fail closed for explicit instructions.
 
 - Verify and deploy the final macOS reliability tree after the parallel tray package: migrate to schema 13 while retaining the stable key/scopes, connections, recording setting and existing history; preserve unverified upstream/Windows/ARM64 boundaries.

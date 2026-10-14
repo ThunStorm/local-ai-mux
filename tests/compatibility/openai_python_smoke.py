@@ -51,9 +51,11 @@ assert raw.headers["x-request-id"] == raw.parse().localmux["request_id"]
 for model, finish, reason in [("fixture/length", "length", "max_output_tokens"), ("fixture/cancel", None, "cancelled")]:
     chat = client.chat.completions.create(model=model, messages=[{"role":"user","content":"synthetic"}])
     assert chat.choices[0].finish_reason == finish and chat.usage.total_tokens == 5
+    assert chat.usage.prompt_tokens_details.cached_tokens == chat.localmux["usage"]["cached_input_tokens"] == 1
     assert chat.localmux["actual_model"] == "synthetic-upstream" and chat.localmux["actual_model_source"] == "provider_reported"
     chunks = list(client.chat.completions.create(model=model, messages=[{"role":"user","content":"synthetic"}], stream=True, stream_options={"include_usage":True}))
     assert chunks[-1].usage.total_tokens == 5 and chunks[-2].choices[0].finish_reason == finish
+    assert chunks[-1].usage.prompt_tokens_details.cached_tokens == chunks[-1].localmux["usage"]["cached_input_tokens"] == 1
     for stream in [False, True]:
         response = client.responses.create(model=model, input="synthetic", stream=stream)
         if stream:
@@ -62,6 +64,7 @@ for model, finish, reason in [("fixture/length", "length", "max_output_tokens"),
             response = events[-1].response
         assert response.status == "incomplete" and response.incomplete_details.reason == reason
         assert response.usage.total_tokens == 5
+        assert response.usage.input_tokens_details.cached_tokens == response.localmux["usage"]["cached_input_tokens"] == 1
 for endpoint in ["chat", "responses"]:
     stream = client.chat.completions.create(model="fixture/wait", messages=[{"role":"user","content":"synthetic"}], stream=True, store=False) if endpoint == "chat" else client.responses.create(model="fixture/wait", input="synthetic", stream=True, store=False)
     for event in stream:
@@ -79,4 +82,4 @@ for status, code in [(429,"LMX_RATE_LIMITED"),(503,"LMX_PROVIDER_COOLDOWN")]:
     except openai.APIStatusError as error:
         assert error.status_code == status and error.body["code"] == code
         assert error.response.headers["x-request-id"] == error.body["request_id"]
-print(f"Python OpenAI {openai.__version__}: 25 contract cases passed / 0 failed (baseline + schema/limits/correlation + length/cancel/SSE + disconnect + 400/429/503)")
+print(f"Python OpenAI {openai.__version__}: 25 contract cases passed / 0 failed (baseline + schema/limits/correlation + length/cancel/cache/SSE + disconnect + 400/429/503)")
