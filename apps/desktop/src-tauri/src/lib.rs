@@ -2,6 +2,8 @@ use localmux_adapter_sdk::Adapter;
 mod default_key;
 mod native_material;
 mod playground;
+#[cfg(target_os = "macos")]
+mod tray_icon;
 use localmux_router::RoutePolicy;
 use localmux_secrets::{MemorySecretStore, SecretStore};
 use secrecy::SecretString;
@@ -1121,6 +1123,27 @@ async fn list_api_keys(
         .map_err(|error| error.to_string())
 }
 
+fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        app.set_activation_policy(tauri::ActivationPolicy::Regular)?;
+        window.show()?;
+        window.unminimize()?;
+        window.set_focus()?;
+    }
+    Ok(())
+}
+
+fn hide_to_tray(window: &tauri::Window) -> tauri::Result<()> {
+    window.hide()?;
+    // Hiding a window alone leaves a regular macOS application in the Dock.
+    #[cfg(target_os = "macos")]
+    window
+        .app_handle()
+        .set_activation_policy(tauri::ActivationPolicy::Accessory)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     localmux_telemetry::init();
@@ -1138,7 +1161,9 @@ pub fn run() {
                 if control.close_to_tray.load(Ordering::Relaxed) {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let _ = window.hide();
+                        if let Err(error) = hide_to_tray(window) {
+                            tracing::warn!(message = %error, "failed to hide window to tray");
+                        }
                     }
                 }
             }
@@ -1206,10 +1231,14 @@ pub fn run() {
             let warnings = MenuItem::with_id(app, "warnings", "警告：0", false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出 LocalAiMux", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&gateway_status, &open, &toggle, &copy_url, &tasks, &warnings, &quit])?;
-            let icon = app.default_window_icon().ok_or_else(|| std::io::Error::other("tray icon unavailable"))?.clone();
-            TrayIconBuilder::new().icon(icon).tooltip("LocalAiMux").menu(&menu)
+            let icon = if cfg!(target_os = "macos") {
+                tauri::include_image!("icons/tray-template.png")
+            } else {
+                app.default_window_icon().ok_or_else(|| std::io::Error::other("tray icon unavailable"))?.clone()
+            };
+            let tray = TrayIconBuilder::new().icon(icon).icon_as_template(cfg!(target_os = "macos")).tooltip("LocalAiMux").menu(&menu)
                 .on_menu_event(|handle, event| match event.id.0.as_str() {
-                    "open" => { if let Some(window) = handle.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); } },
+                    "open" => { let _ = show_main_window(handle); },
                     "toggle" => { let handle = handle.clone(); tauri::async_runtime::spawn(async move {
                         let control = handle.state::<GatewayControl>();
                         let active = control.task.lock().await.as_ref().is_some_and(|task| !task.is_finished());
@@ -1222,9 +1251,19 @@ pub fn run() {
                 }).build(app)?;
             let tray_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                #[cfg(target_os = "macos")]
+                let mut icon_style = None;
+                #[cfg(not(target_os = "macos"))]
+                let _ = tray;
                 loop {
                     let control = tray_app.state::<GatewayControl>();
                     let running = control.task.lock().await.as_ref().is_some_and(|task| !task.is_finished());
+                    #[cfg(target_os = "macos")]
+                    {
+                        if icon_style != Some(running) && tray.set_icon_with_as_template(Some(tray_icon::icon(running, [255; 3])), !running).is_ok() {
+                            icon_style = Some(running);
+                        }
+                    }
                     let _ = gateway_status.set_text(if running { "API：运行中" } else { "API：未启动" });
                     let _ = toggle.set_text(if running { "停止 API" } else { "启动 API" });
                     let _ = tasks.set_text(format!("运行任务：{}", control.state.active_tasks()));
@@ -1297,12 +1336,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build LocalAiMux desktop application")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                let _ = show_main_window(app);
+            }
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 if let Some(control) = app.try_state::<GatewayControl>() {
                     if control.playground.busy() || control.state.active_tasks() > 0 {
                         api.prevent_exit();
                         let _ = app.emit("localmux-exit-blocked", ());
-                        if let Some(window) = app.get_webview_window("main") { let _ = window.show(); }
+                        let _ = show_main_window(app);
                     }
                 }
             }

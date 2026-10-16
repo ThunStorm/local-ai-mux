@@ -5,6 +5,8 @@
 - Project validated per-request cached input counts into standard Chat/Responses usage details while retaining the localmux extension, unknown values and unchanged totals; preserve the last trustworthy usage snapshot across cumulative completion events.
 - Declare endpoint-specific native session resume and unsupported explicit prompt-cache control in the existing v2 capability details, with current public-interface evidence, expiry and strict-schema regression coverage; retain stateless Chat and existing Responses isolation.
 
+- Hide the running macOS Dock icon when closing to the tray; restore the regular application policy, window and focus when reopening from the tray or application entry.
+
 - Automatically derive Codex instruction and effort support from the installed CLI public schema on catalog refresh and invocation, replacing version allowlists; bound schema export/reads, intersect model efforts, omit unverified optional fields for user-only defaults and fail closed for explicit instructions.
 
 - Verify and deploy the final macOS reliability tree after the parallel tray package: migrate to schema 13 while retaining the stable key/scopes, connections, recording setting and existing history; preserve unverified upstream/Windows/ARM64 boundaries.
@@ -12,6 +14,8 @@
 - Gate reliability with isolated official Python/TypeScript SDK servers (25 contract cases each), 400/429/503 and cancellation/truncation coverage, direct loopback transport, bounded diagnostics/storage measurements and the existing cross-platform CI.
 
 - Preserve catalog observation timestamps at refresh and retain the last verified request-usage snapshot when a final event reports untrusted cumulative usage; keep persisted and wire metadata consistent.
+
+- Indicate a running API with a red sun on the white macOS tray silhouette; atomically restore the system template when stopped or exited, refreshing on state changes without repainting unchanged icons.
 
 - Enforce stream deadlines independently of downstream polling with one buffered frame and an abort-on-drop producer; release lanes and owned work even when an SSE body remains unconsumed. Keep 15-second heartbeats and existing execution limits.
 
@@ -24,6 +28,8 @@
 - Add compatible v2 capability/catalog freshness and evidence expiry; downgrade stale effective claims to UNKNOWN without hiding models or upgrading fixture evidence to live verification.
 
 - Bound Gateway requests from HTTP admission through auth, route, Agent queue/spacing, execution and response consumption with one 600-second monotonic deadline; keep existing limits and add safe X-Request-ID correlation.
+
+- Replace the LocalAiMux app, sidebar and favicon icons with user-selected wave/red-sun option 04; regenerate PNG/ICNS/ICO from the preserved original and archive the previous SVG. Use a separate transparent wave/sun template silhouette in the macOS menu bar.
 
 - Add a persistent opt-in dialogue-recording switch with full submitted messages/input and received answers, including partial streams; stop active capture atomically when disabled and honor store:false.
 - Add migration 0012, credential-redacted content storage, on-demand safe dialogue viewing and cascade cleanup; preserve existing metadata, sessions and historical records without backfilling text.

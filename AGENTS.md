@@ -20,7 +20,7 @@
 | 任务 | 必读 | 可改 | 必跑测试 |
 |---|---|---|---|
 | 恢复工作 | `docs/HANDOFF.md` | — | — |
-| 产品/范围 | `docs/BRIEF.md`, `LOCALMUX_PROJECT_PLAN.md` | `docs/product/` | — |
+| 产品/范围 | `docs/BRIEF.md`, `docs/LOCALMUX_PROJECT_PLAN.md` | `docs/product/` | — |
 | 桌面 UI | `docs/product/UX_SPEC.md`, `docs/product/MACOS_VISUAL_SPEC.md`, `docs/development/BUILD.md` | `apps/desktop/src/` | `pnpm typecheck && pnpm test` |
 | 存储/目录 | `docs/architecture/DATABASE.md` | `crates/storage/`, `crates/core/`, `migrations/` | `cargo test -p localmux-storage -p localmux-core` |
 | 日志 | `docs/architecture/OBSERVABILITY.md` | `crates/telemetry/` | `cargo test -p localmux-telemetry` |
@@ -33,7 +33,7 @@
 
 ## 每次改动的最短闭环
 
-1. 先读 `docs/HANDOFF.md`，按上表只读本次任务对应文档；涉及范围或阶段时才读 `docs/BRIEF.md` / `LOCALMUX_PROJECT_PLAN.md`，追溯决策时才读 `docs/DECISIONS.md` 相关条目。动手前用一句话明确验收条件。
+1. 先读 `docs/HANDOFF.md`，按上表只读本次任务对应文档；涉及范围或阶段时才读 `docs/BRIEF.md` / `docs/LOCALMUX_PROJECT_PLAN.md`，追溯决策时才读 `docs/DECISIONS.md` 相关条目。动手前用一句话明确验收条件。
 2. 只改相关代码与说明；行为或契约变化同步对应文档和 `CHANGELOG.md` 的 Unreleased，实际进度或阻塞变化同步 `docs/HANDOFF.md`。不为纯格式改动扩写文档。
 3. 跑上表对应测试；每次改动后在 macOS 执行 `bash scripts/deploy-local-macos.sh`，从当前工作树编译、安装到 `~/Applications/LocalMux.app`、退出旧版并重启，确认进程仍在。Windows 需完成等价本机安装和重启；无法执行时记录未验证项。应用仍有任务运行时先等其结束，不能强制重启。
 4. 验收通过后按需提交、推送：用户要求交付远程或需要共享里程碑时提交并推送；否则保留本地改动并在交接中说明。推送前检查 diff、状态与目标分支，不自动发布 Release。

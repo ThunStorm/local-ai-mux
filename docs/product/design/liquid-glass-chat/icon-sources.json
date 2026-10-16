@@ -1,7 +1,7 @@
 {
-  "date": "2026-10-05",
+  "date": "2026-10-09",
   "policy": "Original software icons; shared CSS size/padding/surface only. No generated vendor illustrations in production.",
-  "selected_app_icon": "apps/desktop/public/localmux.svg; deterministic authored AI core and 3-to-1 multiplexer paths; Tauri CLI exports",
+  "selected_app_icon": "apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-wave-sun-negative.png; user-selected option 04, dark-blue wave with red sun; Tauri CLI exports",
   "software": [
     {
       "id": "codex",
@@ -55,5 +55,23 @@
   "missing": [
     "CodeBuddy CN desktop is not installed; neutral named CLI fallback rather than substituting another product icon"
   ],
-  "historical_illustrations": "docs/product/design/liquid-glass-chat/icons/ retained only as history; superseded"
+  "historical_illustrations": "docs/product/design/liquid-glass-chat/icons/ retained only as history; superseded",
+  "app_icon": {
+    "source": "apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-wave-sun-negative.png",
+    "source_sha256": "a48f50ee2ecb39adad1fa4726e02ddaec539b593fb8d489dd7228d5afaf0ff53",
+    "method": "Tauri CLI icon export from the selected original PNG; no redraw or recolor",
+    "webview": "apps/desktop/public/localmux.png",
+    "webview_sha256": "4fdf853389269ad76aed478e733542ebb1a51b7cdd0fb4c3d2d80ee34c5655e3",
+    "icns_sha256": "2f39d42cf3772aa6b1f213aa90f02c1f15a47d2fb4b722a3c51e83b5c98d1ff9",
+    "previous_source": "docs/product/design/liquid-glass-chat/icons/localmux-2026-10-05.svg",
+    "tray": {
+      "source": "apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-tray-template-source.png",
+      "output": "apps/desktop/src-tauri/icons/tray-template.png",
+      "output_sha256": "9d58f4d208582ee1205a4dca2287ecfba32aff5230f4a5c5f07bd6e883b2d6df",
+      "method": "ImageGen transparent monochrome cutout; sips resize only; macOS template icon; other platforms retain the full app icon",
+      "running_state": "macOS: white wave with red [235,36,32] detached sun; original alpha preserved; non-template rendering",
+      "stopped_state": "original monochrome system template",
+      "refresh": "shared API status poll, up to 2 seconds; update only after state changes"
+    }
+  }
 }
