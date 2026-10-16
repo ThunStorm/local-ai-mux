@@ -32,3 +32,5 @@ M2/M4 门禁补强：catalog.observed_at 在实际刷新时保存，读取不随
 2026-10-14 缓存用量：可信 provider_reported + request/last_turn 的 cached_input_tokens 同源投影到 Chat `usage.prompt_tokens_details.cached_tokens`（非流式及 include_usage SSE）和 Responses `usage.input_tokens_details.cached_tokens`（含流式终态 response），兼容保留 `localmux.usage`。缓存是 input 的子集，不加到 input/total；缓存缺失、无可信 input 或超过 input 时省略标准细分、扩展为 null，明确报告的零保留。无可信用量时 usage=null，session_total 不能覆盖最近可信快照。此契约不保证缓存命中、延迟或订阅额度收益。
 
 v2 `chat.details.session_resume/prompt_cache_control` 的可选 `api_support` 按完整端点路径声明有效能力。Chat 原生续接 UNSUPPORTED；Responses 按精确型号与当前 Adapter 公开契约为 SUPPORTED/UNSUPPORTED/UNKNOWN，证据过期 SUPPORTED 降 UNKNOWN；仍需 owner/最新成功 Response/相同模型与 Adapter/原生 ID。两个入口的显式缓存控制均 UNSUPPORTED（gateway strict schema），底层 native UNKNOWN。缓存计数不开放 prompt_cache_options/prompt_cache_key 等字段，未知字段继续400；无隐式线程聚合。详见[实施与验收](../LOCALAIMUX_PREFIX_CACHE_AND_SESSION_CAPABILITY_ASSESSMENT.md#六2026-10-14-实施与验收)。
+
+2026-10-16：有界localmux.timing快照兼容包含reported_input_tokens、reported_cached_input_tokens和usage_status可选诊断键，与标准usage/扩展usage同源，仅记录上游可信本次快照。旧客户端可忽略；旧记录不回填，无新请求参数或缓存控制透传。store:false仍不保存任何本次记录，诊断中的计数不代表费用或订阅额度收益。

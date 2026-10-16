@@ -20,3 +20,5 @@ SQLite 通过版本化 migration 初始化：`0001` 设置、`0002` API Key 哈�
 `0012` 新增 `call_recording_settings`（单行开关/代次，初始关闭）与 `call_contents`（按 call_id 外键级联，独立 JSON 输入、回答与录制状态）。原元数据表、Key/连接和续接映射不改写；旧记录没有正文。开关关闭与终止当前录制同事务，条件更新禁止过期代次继续写；保存相同开关值不递增代次。元数据终态和正文 complete/partial 标记同事务，启动恢复保留部分正文。列表仍只查元数据，正文由独立 IPC 按需读取，详情不截断；清理元数据同步清理正文，续接映射仍保留。备份从本版本起可能包含用户已启用录制的正文，不能把数据库备份当作纯元数据诊断报告。
 
 `0013` 在 call_records 添加可空 request_id 与受 8192 字节限制的 diagnostics JSON 及关联 ID 索引；最新 migration 为 13。没有新历史表、无正文复制、无旧记录回填。保留现有终态更新条件/事务，store:false 不写入新字段。升级需任务 0、完整性检查和 SQLite 一致备份；旧程序 SQLx 校验无法直接打开新版本数据库，回滚见[运行诊断](SESSION_MODEL.md#有界运行诊断2026-10-10--m3)。
+
+2026-10-16：现有0013 diagnostics JSON兼容新增可空reported_input_tokens / reported_cached_input_tokens / usage_status，来自统一校验的provider_reported + request/last_turn快照。缓存是input子集；无input或cached>input时缓存为空，未知不补零。无新迁移、不回填旧JSON，不保存Prompt/回答/凭据；store:false仍跳过元数据和正文，旧版本可忽略新增可选键。

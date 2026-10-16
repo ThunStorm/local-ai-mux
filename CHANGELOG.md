@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show provider-reported input/cache counts and a valid cached share in call details; persist optional bounded diagnostic counts without migrating or backfilling history, preserve unknown/zero semantics and honor store:false.
+
 - Project validated per-request cached input counts into standard Chat/Responses usage details while retaining the localmux extension, unknown values and unchanged totals; preserve the last trustworthy usage snapshot across cumulative completion events.
 - Declare endpoint-specific native session resume and unsupported explicit prompt-cache control in the existing v2 capability details, with current public-interface evidence, expiry and strict-schema regression coverage; retain stateless Chat and existing Responses isolation.
 

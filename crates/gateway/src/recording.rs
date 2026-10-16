@@ -134,11 +134,17 @@ impl Call {
         metrics.actual_model_source = metadata.actual_model_source.clone();
         metrics.usage_source = None;
         metrics.usage_scope = None;
+        metrics.usage_status = Some("unknown".into());
+        metrics.reported_input_tokens = None;
+        metrics.reported_cached_input_tokens = None;
         if let Some(usage) = &metadata.usage {
             metrics.usage_source =
                 (usage.source == "provider_reported").then(|| "provider_reported".into());
             metrics.usage_scope = matches!(usage.scope.as_str(), "request" | "last_turn")
                 .then(|| usage.scope.clone());
+            metrics.usage_status = Some("provider_reported".into());
+            metrics.reported_input_tokens = usage.input_tokens;
+            metrics.reported_cached_input_tokens = usage.cached_input_tokens;
         }
         drop(metrics);
         if let Some(record) = &self.0 {

@@ -46,3 +46,5 @@ request_bytes 是 Gateway 收到的 JSON Body 字节；非流 response_bytes 是
 回滚需要先停止且确认任务为 0，保留升级后 DB/正文备份，再恢复 M3 前 DB 与匹配旧程序；旧 SQLx 程序不能直接打开含 0013 的数据库。不要在用户数据库删列/篡改迁移账本，升级后新增记录先保留。
 
 2026-10-14：能力目录 `chat.details.session_resume.api_support` 分别报告 Chat（UNSUPPORTED）和 Responses 的当前 Adapter 契约；不替代本节 owner、最新成功响应、模型/Adapter 黏性和原生 ID 门禁。prompt_cache_control 在两入口均 UNSUPPORTED；报告 cached tokens 与续接/正文录制是独立事实，无全局隐藏会话，无新迁移或历史回填。
+
+2026-10-16：缓存诊断复用有界call_records.diagnostics，新增可空reported_input_tokens、reported_cached_input_tokens和usage_status（provider_reported / unknown）。与标准响应及localmux.usage复用同一来源/本次口径校验；缓存包含在input中，不加到input/total。记录详情仅对可信且非零input计算占比，未知/旧记录不补填，明确零可显示0。旧诊断JSON缺键可读，无迁移，无Prompt持久化变化；store:false优先禁止保存。用户已确认业务验收，具体型号/缓存收益未提供样本，本轮不扩大live_verified或M2支持结论。

@@ -112,102 +112,133 @@ fn post(key: &str, path: &str, body: Value) -> Request<Body> {
 }
 #[tokio::test]
 async fn cache_counts_match_standard_and_extension_across_protocols_and_streams() {
-    let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+    let pool = localmux_storage::open_memory().await.unwrap();
+    let state = GatewayState::new(pool.clone());
     state.register(Arc::new(CacheFixture)).await;
-    let (_, key) = state
-        .create_key(&["chat:invoke", "responses:invoke"])
-        .await
-        .unwrap();
     let app = router(state.clone());
-    for responses in [false, true] {
-        for streaming in [false, true] {
-            for case in [
-                "cached",
-                "missing",
-                "zero",
-                "invalid",
-                "missing-input",
-                "unknown",
-                "untrusted",
-                "cumulative",
-                "cumulative-final",
-            ] {
-                let path = if responses {
-                    "/v1/responses"
-                } else {
-                    "/v1/chat/completions"
-                };
-                let mut request = if responses {
-                    json!({"model":"cache/text","input":case})
-                } else {
-                    json!({"model":"cache/text","messages":[{"role":"user","content":case}]})
-                };
-                request["stream"] = json!(streaming);
-                request["store"] = json!(false);
-                if streaming && !responses {
-                    request["stream_options"] = json!({"include_usage":true});
-                }
-                let response = app
-                    .clone()
-                    .oneshot(post(&key, path, request))
-                    .await
-                    .unwrap();
-                assert!(
-                    response.status().is_success(),
-                    "{responses}/{streaming}/{case}"
-                );
-                let bytes = response.into_body().collect().await.unwrap().to_bytes();
-                let value: Value = if streaming {
-                    let text = std::str::from_utf8(&bytes).unwrap();
-                    let last: Value = text
-                        .lines()
-                        .filter_map(|l| l.strip_prefix("data: "))
-                        .filter(|l| *l != "[DONE]")
-                        .map(|l| serde_json::from_str::<Value>(l).unwrap())
-                        .next_back()
+    for store in [false, true] {
+        // Independent synthetic clients keep this matrix below each key's normal RPM gate.
+        let (_, key) = state
+            .create_key(&["chat:invoke", "responses:invoke"])
+            .await
+            .unwrap();
+        for responses in [false, true] {
+            for streaming in [false, true] {
+                for case in [
+                    "cached",
+                    "missing",
+                    "zero",
+                    "invalid",
+                    "missing-input",
+                    "unknown",
+                    "untrusted",
+                    "cumulative",
+                    "cumulative-final",
+                ] {
+                    let path = if responses {
+                        "/v1/responses"
+                    } else {
+                        "/v1/chat/completions"
+                    };
+                    let mut request = if responses {
+                        json!({"model":"cache/text","input":case})
+                    } else {
+                        json!({"model":"cache/text","messages":[{"role":"user","content":case}]})
+                    };
+                    request["stream"] = json!(streaming);
+                    request["store"] = json!(store);
+                    if streaming && !responses {
+                        request["stream_options"] = json!({"include_usage":true});
+                    }
+                    let response = app
+                        .clone()
+                        .oneshot(post(&key, path, request))
+                        .await
                         .unwrap();
-                    if responses {
-                        last["response"].clone()
+                    assert!(
+                        response.status().is_success(),
+                        "{responses}/{streaming}/{case}"
+                    );
+                    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+                    let value: Value = if streaming {
+                        let text = std::str::from_utf8(&bytes).unwrap();
+                        let last: Value = text
+                            .lines()
+                            .filter_map(|l| l.strip_prefix("data: "))
+                            .filter(|l| *l != "[DONE]")
+                            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                            .next_back()
+                            .unwrap();
+                        if responses {
+                            last["response"].clone()
+                        } else {
+                            last
+                        }
                     } else {
-                        last
-                    }
-                } else {
-                    serde_json::from_slice(&bytes).unwrap()
-                };
-                let trusted = !matches!(case, "unknown" | "untrusted" | "cumulative");
-                assert_eq!(
-                    value["usage"].is_object(),
-                    trusted,
-                    "{responses}/{streaming}/{case}"
-                );
-                assert_eq!(
-                    value["localmux"]["usage_status"],
+                        serde_json::from_slice(&bytes).unwrap()
+                    };
+                    let trusted = !matches!(case, "unknown" | "untrusted" | "cumulative");
+                    assert_eq!(
+                        value["usage"].is_object(),
+                        trusted,
+                        "{responses}/{streaming}/{case}"
+                    );
+                    assert_eq!(
+                        value["localmux"]["usage_status"],
+                        if trusted {
+                            "provider_reported"
+                        } else {
+                            "unknown"
+                        }
+                    );
+                    let expected = match case {
+                        "zero" => json!(0),
+                        "cached" | "cumulative-final" => json!(3),
+                        _ => Value::Null,
+                    };
+                    let details = if responses {
+                        "input_tokens_details"
+                    } else {
+                        "prompt_tokens_details"
+                    };
+                    assert_eq!(
+                        value["usage"][details]["cached_tokens"], expected,
+                        "{responses}/{streaming}/{case}"
+                    );
+                    assert_eq!(value["localmux"]["usage"]["cached_input_tokens"], expected);
                     if trusted {
-                        "provider_reported"
-                    } else {
-                        "unknown"
+                        assert_eq!(value["usage"]["total_tokens"], 14);
                     }
-                );
-                let expected = match case {
-                    "zero" => json!(0),
-                    "cached" | "cumulative-final" => json!(3),
-                    _ => Value::Null,
-                };
-                let details = if responses {
-                    "input_tokens_details"
-                } else {
-                    "prompt_tokens_details"
-                };
-                assert_eq!(
-                    value["usage"][details]["cached_tokens"], expected,
-                    "{responses}/{streaming}/{case}"
-                );
-                assert_eq!(value["localmux"]["usage"]["cached_input_tokens"], expected);
-                if trusted {
-                    assert_eq!(value["usage"]["total_tokens"], 14);
-                }
-                if expected.is_null() && trusted {
-                    assert!(value["usage"].get(details).is_none());
+                    if expected.is_null() && trusted {
+                        assert!(value["usage"].get(details).is_none());
+                    }
+                    let records = localmux_storage::list_calls(&pool, &Default::default())
+                        .await
+                        .unwrap();
+                    if !store {
+                        assert!(records.is_empty());
+                    } else {
+                        let row = &records[0];
+                        assert_eq!(
+                            row.request_id.as_deref(),
+                            value["localmux"]["request_id"].as_str()
+                        );
+                        let diagnostics = row.diagnostics.as_ref().unwrap();
+                        assert_eq!(
+                            diagnostics.usage_status.as_deref(),
+                            value["localmux"]["usage_status"].as_str()
+                        );
+                        assert_eq!(
+                            diagnostics.reported_input_tokens,
+                            value["localmux"]["usage"]["input_tokens"].as_u64()
+                        );
+                        assert_eq!(diagnostics.reported_cached_input_tokens, expected.as_u64());
+                        assert_eq!(row.total_tokens, trusted.then_some(14));
+                        assert!(localmux_storage::call_content(&pool, &row.id)
+                            .await
+                            .unwrap()
+                            .is_none());
+                    }
                 }
             }
         }

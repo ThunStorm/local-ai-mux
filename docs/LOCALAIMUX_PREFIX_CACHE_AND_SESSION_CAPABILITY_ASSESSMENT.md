@@ -60,3 +60,11 @@
 - 字段依据：[OpenAI Chat Completions 参考](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) 的 prompt_tokens_details.cached_tokens（2026-10-14 核对）；只借用标准用量形状，不继承其上游缓存控制能力。
 
 最终验证与安装来源见 `docs/HANDOFF.md` 本轮记录。M2 继续以真实接口/型号支持及用户显式真实试验为前置；本文件第五节原建议的真实采样未执行，不作为 M0/M1 离线开发的已完成证据。
+
+## 七、2026-10-16 业务验收后续
+
+用户在本聊天明确确认“已完成业务验收”。此为用户提供的业务结论，未提供样本响应、具体型号/协议或缓存收益数据；本轮不重复真实生成，不将其扩写成全部型号缓存命中、订阅额度收益、Windows/ARM64或M2控制已验收，也不批量修改能力目录的live_verified。
+
+本轮补齐可选缓存诊断：现有有界diagnostics兼容添加reported_input_tokens、reported_cached_input_tokens、usage_status，仅来源校验后的本次快照可写入；记录详情展示输入Token、其中缓存Token、缓存占输入比例和报告状态。缺失保持未知、明确零保留，分母为零/未知或缓存越界不计算比例；比例不代表费用/订阅额度节省。旧记录不回填，store:false不落库，无新迁移或正文录制改动。合成矩阵核对Chat/Responses流/非流wire与保存结果一致，UI验证可信/零/缺失/旧数据等状态及浅深/窄窗口。
+
+M2仍以后端公开支持和精确接口/型号的真实控制试验为前置；当前已有缓存计数与用户业务验收不构成显式缓存参数透传证据。跨仓库消费端开发不在本轮，按用户已完成业务验收保留，不重复修改至简配置或历史。

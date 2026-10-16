@@ -45,6 +45,12 @@ pub struct CallDiagnostics {
     pub route_kind: Option<String>,
     pub usage_source: Option<String>,
     pub usage_scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reported_cached_input_tokens: Option<u64>,
     pub finish_source: Option<String>,
     pub actual_model_source: Option<String>,
     pub normalization: Option<String>,
@@ -361,6 +367,39 @@ mod content_tests {
 #[cfg(test)]
 mod diagnostics_tests {
     use super::*;
+    #[tokio::test]
+    async fn legacy_diagnostics_remain_unknown_without_backfill() {
+        let pool = crate::open_memory().await.unwrap();
+        let record = CallRecord {
+            id: "legacy-cache".into(),
+            source: "api".into(),
+            endpoint: "chat".into(),
+            requested_model: "fixture/text".into(),
+            status: "completed".into(),
+            ..Default::default()
+        };
+        start_call(&pool, &record).await.unwrap();
+        finish_call(&pool, &record).await.unwrap();
+        let legacy = r#"{"cancel_requested":false,"usage_source":"provider_reported","usage_scope":"request"}"#;
+        sqlx::query("UPDATE call_records SET diagnostics=? WHERE id=?")
+            .bind(legacy)
+            .bind(&record.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let rows = list_calls(&pool, &Default::default()).await.unwrap();
+        let diagnostics = rows[0].diagnostics.as_ref().unwrap();
+        assert!(diagnostics.reported_input_tokens.is_none());
+        assert!(diagnostics.reported_cached_input_tokens.is_none());
+        assert!(diagnostics.usage_status.is_none());
+        let stored: String = sqlx::query_scalar("SELECT diagnostics FROM call_records WHERE id=?")
+            .bind(&record.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, legacy);
+    }
+
     #[tokio::test]
     async fn version_twelve_upgrade_keeps_old_records_unknown_and_rejects_unbounded_diagnostics() {
         let path =
