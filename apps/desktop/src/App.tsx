@@ -1,3 +1,4 @@
+import ExecutionLimits from "./ExecutionLimits";
 import CallRecords from "./CallRecords";
 import ChatPlayground from "./ChatPlayground";
 import { useEffect, useRef, useState } from "react";
@@ -7,6 +8,7 @@ import MacShell, { type Locale, type Theme, type View } from "./MacShell";
 import Overview from "./Overview";
 import ApiQuickSetup from "./ApiQuickSetup";
 import ApplicationInventory, { type Detection, type QuotaBucket } from "./ApplicationInventory";
+import QuotaLines from "./QuotaLines";
 import "./App.css";
 
 type ScanReport = { applications: Detection[]; scanned_roots: string[] };
@@ -14,7 +16,6 @@ type NewApiKey = { id: string; key: string };
 type KeyPolicy = { allowed_routes: string[]; allowed_connections: string[]; execution_profile: "INFERENCE_ONLY" | "READ_ONLY_AGENT"; rate_limit_per_minute: number };
 type KeySummary = { id: string; scopes: string[]; policy: KeyPolicy };
 type RoutePolicy = { reserve_as_free: boolean; allow_metered: boolean; best_model: string | null; priority: string[] };
-type QuotaSnapshot = { connection_id: string; remaining: number | null; limit: number | null; unit: string | null; reset_at: number | null; source: string; observed_at: number };
 type Conversation = { id: string; model_id: string; adapter_id: string; provider_session_id: string | null; resume_supported: boolean; created_at: number; last_active_at: number; status: string };
 type RunEvent = { kind: string; detail_json: string; observed_at: number };
 type AuthStatus = "CHECKING" | "LOGIN_PENDING" | "READY" | "AUTH_REQUIRED" | "ERROR";
@@ -24,7 +25,7 @@ const supportedAppIds = new Set(["codex", "qoder", "qoder-cn", "codebuddy", "mim
 const defaultPolicy: RoutePolicy = { reserve_as_free: false, allow_metered: false, best_model: null, priority: [] };
 const defaultKeyPolicy: KeyPolicy = { allowed_routes: [], allowed_connections: [], execution_profile: "INFERENCE_ONLY", rate_limit_per_minute: 60 };
 const isConnectable = (app: Detection) => app.connectability === "SUPPORTED_VERSION_UNKNOWN" && !!app.executable;
-const quotaGuides: Record<string, string> = { qoder: "https://docs.qoder.com/cli/usage", codebuddy: "https://www.codebuddy.cn/docs/workbuddy/Credits", mimo: "https://platform.xiaomimimo.com/" };
+const quotaGuides: Record<string, string> = { qoder: "https://docs.qoder.com/cli/usage", codebuddy: "https://www.codebuddy.cn/docs/cli/reference", mimo: "https://platform.xiaomimimo.com/" };
 const copy = {
   zh: { home: "总览", discover: "应用与连接", routing: "路由", sessions: "会话", api: "API", welcome: "欢迎使用LocalAiMux", intro: "扫描已安装的 AI 应用，显式连接官方运行时，再复制本机 API 配置。", phase: "当前阶段", phaseValue: "本机桌面 AI API", detected: "发现应用", scan: "重新扫描", scanning: "扫描中…", none: "未发现目标应用", roots: "已检查的位置", diagnostics: "诊断信息", detectedOnly: "仅检测到，尚未连接", broken: "安装不完整", add: "添加", addDesktop: "添加应用", addedState: "已添加应用（仅登记）", removeDesktop: "移除应用", pending: "该 Adapter 尚未接入；后续阶段开放连接", firstRun: "首次使用", steps: "欢迎 → 扫描 → 连接 → 开启 API", later: "稍后继续", apiTitle: "本地 API", running: "运行中", stopped: "未启动", start: "启动 API", stop: "停止 API", createKey: "创建 API Key", keyOnce: "请立即复制。此 Key 仅显示一次，数据库只存哈希。", copy: "复制", copied: "已复制", revoke: "撤销此 Key", language: "语言", theme: "外观", system: "跟随系统", light: "浅色", dark: "深色", unavailable: "桌面服务不可用", connected: "已保存连接", disconnect: "断开", connecting: "连接中…", connectedState: "已连接", loginHint: "请先在对应官方 CLI 完成登录，再重试连接", versionUnverified: "CLI 版本未验证", routeTitle: "虚拟路由", refresh: "刷新目录与额度", unavailableRoute: "暂无符合条件的模型", reserveFree: "允许已确认可用的 Reserve 进入 free", metered: "balanced 允许计费模型（可能产生费用）", bestModel: "best 指定模型 ID", priority: "优先级模型 ID（逗号分隔）", save: "保存路由策略", saving: "保存中…", quota: "官方额度", quotaUnknown: "上游尚未报告额度，状态未知", providerReported: "上游报告", estimated: "估算", unknown: "未知", sessionTitle: "会话记录", sessionEmpty: "暂无续接会话。完整完成且允许保存的 Responses 调用会出现在这里。", sessionResume: "支持上游续接", sessionNoResume: "上游不支持续接", sessionEvents: "路由事件", noEvents: "暂无路由事件", lastActive: "最近活动", sessionRefresh: "刷新会话", profile: "执行权限", inferenceOnly: "仅推理（默认）", readOnlyAgent: "只读 Agent", agentWarning: "只读 Agent 允许调用已连接的官方 CLI。LocalAiMux 会请求只读模式，但上游运行时仍自行管理工具权限。", allowedRoutes: "允许的模型 / 虚拟路由（逗号分隔，留空为全部）", allowedConnections: "允许的连接 ID（逗号分隔，留空为全部）", rateLimit: "每分钟请求上限" },
   en: { home: "Overview", discover: "Apps & connections", routing: "Routing", sessions: "Sessions", api: "API", welcome: "Welcome to LocalAiMux", intro: "Find installed AI apps, explicitly connect official runtimes, then copy a local API configuration.", phase: "Current phase", phaseValue: "Desktop AI API", detected: "Found apps", scan: "Rescan", scanning: "Scanning…", none: "No target apps found", roots: "Locations checked", diagnostics: "Diagnostics", detectedOnly: "Detected, not connected", broken: "Incomplete installation", add: "Add", addDesktop: "Add app", addedState: "Added app (inventory only)", removeDesktop: "Remove app", pending: "This adapter is not available yet", firstRun: "First run", steps: "Welcome → Scan → Connect → Start API", later: "Continue later", apiTitle: "Local API", running: "Running", stopped: "Stopped", start: "Start API", stop: "Stop API", createKey: "Create API key", keyOnce: "Copy now. This key is shown only once; the database stores its hash.", copy: "Copy", copied: "Copied", revoke: "Revoke this key", language: "Language", theme: "Appearance", system: "System", light: "Light", dark: "Dark", unavailable: "Desktop service unavailable", connected: "Saved connections", disconnect: "Disconnect", connecting: "Connecting…", connectedState: "Connected", loginHint: "Sign in through the official CLI, then retry", versionUnverified: "CLI version unverified", routeTitle: "Virtual routes", refresh: "Refresh catalog and quota", unavailableRoute: "No eligible model", reserveFree: "Allow confirmed available Reserve in free", metered: "Allow metered models in balanced (may incur charges)", bestModel: "Explicit model ID for best", priority: "Priority model IDs (comma separated)", save: "Save route policy", saving: "Saving…", quota: "Official quota", quotaUnknown: "No upstream quota report; status unknown", providerReported: "Provider reported", estimated: "Estimated", unknown: "Unknown", sessionTitle: "Conversations", sessionEmpty: "No resume sessions yet. Stored, completed Responses calls appear here.", sessionResume: "Upstream resume available", sessionNoResume: "Upstream resume unavailable", sessionEvents: "Routing events", noEvents: "No routing events", lastActive: "Last active", sessionRefresh: "Refresh sessions", profile: "Execution profile", inferenceOnly: "Inference only (default)", readOnlyAgent: "Read-only agent", agentWarning: "Read-only agent calls connected official CLIs. LocalAiMux requests read-only mode; the upstream runtime controls its own tool permissions.", allowedRoutes: "Allowed model / virtual route IDs (comma separated; blank = all)", allowedConnections: "Allowed connection IDs (comma separated; blank = all)", rateLimit: "Requests per minute" },
@@ -47,7 +48,6 @@ function App() {
   const [baseUrl, setBaseUrl] = useState("");
   const [policy, setPolicy] = useState<RoutePolicy>(defaultPolicy);
   const [routeStatus, setRouteStatus] = useState<[string, string | null][]>([]);
-  const [quotaSnapshots, setQuotaSnapshots] = useState<QuotaSnapshot[]>([]);
   const [quotaBuckets, setQuotaBuckets] = useState<QuotaBucket[]>([]);
   const [routeBusy, setRouteBusy] = useState(false);
   const [sessions, setSessions] = useState<Conversation[]>([]);
@@ -93,7 +93,6 @@ function App() {
     invoke<[string, string][]>("added_apps").then(value => { if (active) setAddedApps(value); }).catch(() => {});
     invoke<RoutePolicy>("routing_get").then(value => { if (active) setPolicy(value); }).catch(() => {});
     invoke<[string, string | null][]>("routing_status").then(value => { if (active) setRouteStatus(value); }).catch(() => {});
-    invoke<QuotaSnapshot[]>("quota_snapshots").then(value => { if (active) setQuotaSnapshots(value); }).catch(() => {});
     invoke<QuotaBucket[]>("quota_buckets").then(value => { if (active) setQuotaBuckets(value); }).catch(() => {});
     const loadRuntime = () => invoke<Record<string, RuntimeStatus>>("connection_runtime_status").then(value => { if (active) setRuntimeStatuses(value); }).catch(() => { if (active) setRuntimeStatuses({}); });
     void loadRuntime();
@@ -169,7 +168,6 @@ function App() {
       setModelTests(current => Object.fromEntries(Object.entries(current).filter(([model]) => !model.startsWith(`${appId}/`))));
       setConnectedApps(current => [...current.filter(([id]) => id !== appId), [appId, executable]]);
       setRouteStatus(await invoke<[string, string | null][]>("routing_status"));
-      setQuotaSnapshots(await invoke<QuotaSnapshot[]>("quota_snapshots"));
       setQuotaBuckets(await invoke<QuotaBucket[]>("quota_buckets"));
     } catch (cause) {
       const message = String(cause);
@@ -228,7 +226,6 @@ function App() {
       setSelectedModels(current => ({ ...current, mimo: models }));
       setConnectedApps(current => [...current.filter(([id]) => id !== "mimo"), ["mimo", "session-credential:mimo"]]);
       setRouteStatus(await invoke<[string, string | null][]>("routing_status"));
-      setQuotaSnapshots(await invoke<QuotaSnapshot[]>("quota_snapshots"));
       setQuotaBuckets(await invoke<QuotaBucket[]>("quota_buckets"));
     } catch (cause) { setError(String(cause)); }
     finally { setConnecting(null); }
@@ -254,7 +251,6 @@ function App() {
       setConnectedApps(current => current.filter(([id]) => id !== appId));
       setSelectedModels(current => { const next = { ...current }; delete next[appId === "mimocode" ? "mimo" : appId]; return next; });
       setRouteStatus(await invoke<[string, string | null][]>("routing_status"));
-      setQuotaSnapshots(await invoke<QuotaSnapshot[]>("quota_snapshots"));
       setQuotaBuckets(await invoke<QuotaBucket[]>("quota_buckets"));
     } catch (cause) { setError(String(cause)); }
     finally { setConnecting(null); }
@@ -282,7 +278,6 @@ function App() {
     setRouteBusy(true); setError("");
     try {
       setRouteStatus(await invoke<[string, string | null][]>("routing_refresh"));
-      setQuotaSnapshots(await invoke<QuotaSnapshot[]>("quota_snapshots"));
       setQuotaBuckets(await invoke<QuotaBucket[]>("quota_buckets"));
     } catch (cause) { setError(String(cause)); }
     finally { setRouteBusy(false); }
@@ -356,7 +351,7 @@ function App() {
         <label>{t.priority}<input value={policy.priority.join(", ")} onChange={event => setPolicy(current => ({ ...current, priority: event.target.value.split(",").map(item => item.trim()) }))} /></label>
         <button onClick={saveRouting} disabled={routeBusy}>{routeBusy ? t.saving : t.save}</button>
       </section>
-      <h2>{t.quota}</h2>{quotaSnapshots.length === 0 ? <p>{t.quotaUnknown}</p> : <ul>{quotaSnapshots.map(item => <li key={item.connection_id}><strong>{item.connection_id}</strong>: {item.source === "PROVIDER_REPORTED" && item.remaining !== null ? item.unit?.startsWith("%") ? `${locale === "zh" ? "剩余" : "Remaining"} ${item.remaining}% ${item.unit.slice(1)}` : `${item.remaining} / ${item.limit ?? t.unknown} ${item.unit ?? ""}` : t.quotaUnknown} · {item.source === "PROVIDER_REPORTED" ? t.providerReported : item.source === "ESTIMATED" ? t.estimated : t.unknown}{item.reset_at && ` · ${locale === "zh" ? "重置" : "Resets"} ${new Date(item.reset_at * 1000).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}`}{item.observed_at > 0 && ` · ${new Date(item.observed_at * 1000).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}`}{quotaGuides[item.connection_id] && <> · <a href={quotaGuides[item.connection_id]} target="_blank" rel="noreferrer">{locale === "zh" ? "查看官方额度入口" : "Official quota guide"}</a></>}</li>)}</ul>}
+      <h2>{t.quota}</h2>{connectedApps.length === 0 ? <p>{t.quotaUnknown}</p> : <ul>{connectedApps.map(([id]) => <li key={id}><strong>{id}</strong><QuotaLines buckets={quotaBuckets.filter(bucket => bucket.connection_id === id)} locale={locale} details />{quotaGuides[id] && <a href={quotaGuides[id]} target="_blank" rel="noreferrer">{locale === "zh" ? "查看官方额度入口" : "Official quota guide"}</a>}</li>)}</ul>}
     </section>}
     {view === "sessions" && <section className="page"><header className="page-heading"><div><h1>{t.sessionTitle}</h1></div></header>
       <CallRecords locale={locale} />
@@ -368,6 +363,7 @@ function App() {
     </section>}
     {view === "api" && <section className="page api-page"><header className="page-heading"><div><h1>{t.apiTitle}</h1><p className="service-state"><span className={running ? "status-dot live" : "status-dot"} />{running ? t.running : t.stopped} · {locale === "zh" ? "仅本机访问" : "Loopback only"}</p></div><button className="primary" onClick={toggleGateway}>{running ? t.stop : t.start}</button></header>
       <ApiQuickSetup running={running} baseUrl={baseUrl} connections={connectedApps.map(([id, path]) => `${id}:${path}`).join("|")} locale={locale} />
+      <ExecutionLimits locale={locale} />
       <details className="advanced-key"><summary>{locale === "zh" ? "高级 Key 管理" : "Advanced key management"}</summary><div className="card api-card"><div className="routing-form key-policy"><label>{t.profile}<select value={keyPolicy.execution_profile} onChange={event => setKeyPolicy(current => ({ ...current, execution_profile: event.target.value as KeyPolicy["execution_profile"] }))}><option value="INFERENCE_ONLY">{t.inferenceOnly}</option><option value="READ_ONLY_AGENT">{t.readOnlyAgent}</option></select></label>{keyPolicy.execution_profile === "READ_ONLY_AGENT" && <p className="notice">{t.agentWarning}</p>}<label>{t.allowedRoutes}<input value={keyRoutesText} onChange={event => setKeyRoutesText(event.target.value)} /></label><label>{t.allowedConnections}<input value={keyConnectionsText} onChange={event => setKeyConnectionsText(event.target.value)} /></label><label>{t.rateLimit}<input type="number" min="1" max="600" value={keyPolicy.rate_limit_per_minute} onChange={event => setKeyPolicy(current => ({ ...current, rate_limit_per_minute: Number(event.target.value) }))} /></label><button onClick={createKey}>{t.createKey}</button></div>{key && <><p>{t.keyOnce}</p><div className="key-row"><code>{key.key}</code><button onClick={() => copyText(key.key)}>{copied ? t.copied : t.copy}</button></div></>}{keys.length > 0 && <div className="key-list"><h2>{locale === "zh" ? "已创建的 Key" : "Created keys"}</h2>{keys.map(item => <div className="key-entry" key={item.id}><div><code>{item.id}</code><p>{item.policy.execution_profile === "READ_ONLY_AGENT" ? t.readOnlyAgent : t.inferenceOnly} · {item.policy.rate_limit_per_minute}/min</p><small>{item.policy.allowed_routes.length ? item.policy.allowed_routes.join(", ") : locale === "zh" ? "全部路由" : "All routes"} · {item.policy.allowed_connections.length ? item.policy.allowed_connections.join(", ") : locale === "zh" ? "全部连接" : "All connections"}</small></div><button className="quiet" onClick={() => revokeKey(item.id)}>{t.revoke}</button></div>)}</div>}</div></details>
       <details className="inline-disclosure desktop-settings"><summary>{locale === "zh" ? "桌面与更新" : "Desktop and updates"}</summary><section className="routing-form"><label><input type="checkbox" checked={autoStart} onChange={event => setAutoStartEnabled(event.target.checked)} />{locale === "zh" ? "登录系统时启动LocalAiMux" : "Launch LocalAiMux at login"}</label><label><input type="checkbox" checked={closeToTray} onChange={event => setCloseToTrayEnabled(event.target.checked)} />{locale === "zh" ? "关闭窗口后继续在托盘运行" : "Keep running in tray when window closes"}</label><p>{updaterReady ? locale === "zh" ? "更新源已配置；安装更新需要再次点击。" : "Update source configured; installation needs a separate click." : locale === "zh" ? "尚未配置签名公钥和更新源，更新功能暂不可用。" : "Signing key and update source are not configured yet."}</p><button onClick={checkUpdate} disabled={!updaterReady || updateBusy}>{locale === "zh" ? "检查更新" : "Check for updates"}</button>{updateVersion !== null && <button onClick={installUpdate} disabled={updateBusy}>{locale === "zh" ? `安装 ${updateVersion}` : `Install ${updateVersion}`}</button>}{updaterReady && !updateBusy && updateVersion === null && <small>{locale === "zh" ? "检查后如无新版本，将保持当前版本。" : "If no update is found, the current version remains."}</small>}</section></details></section>}
     <ChatPlayground visible={view === "chat"} running={running} connections={connectedApps.map(([id]) => id).join("|")} locale={locale} onApi={() => setView("api")} />

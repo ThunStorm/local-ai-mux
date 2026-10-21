@@ -62,6 +62,12 @@ impl Adapter for Fixture {
         if request.prompt == "failure" {
             return Err(AdapterError::ProviderUnavailable);
         }
+        if request.prompt == "cli_timeout" {
+            return Err(AdapterError::TimeoutAt {
+                layer: localmux_adapter_sdk::TimeoutLayer::CliIdle,
+                limit: request.cli_idle_timeout,
+            });
+        }
         if request.prompt == "timeout" {
             return Err(AdapterError::Timeout);
         }
@@ -90,6 +96,7 @@ impl Adapter for Fixture {
             yield Ok(StreamEvent::Delta("ANSWER_PRIVATE_SENTINEL".into()));
             if request.prompt == "wait" { std::future::pending::<()>().await; }
             if request.prompt == "failure" { yield Err(AdapterError::ProviderUnavailable); return; }
+            if request.prompt == "cli_timeout" { yield Err(AdapterError::TimeoutAt { layer: localmux_adapter_sdk::TimeoutLayer::CliIdle, limit: request.cli_idle_timeout }); return; }
             if request.prompt == "timeout" { yield Err(AdapterError::Timeout); return; }
             if request.prompt == "eof" { return; }
             yield Ok(StreamEvent::Completed(metadata(&request.prompt)));
@@ -747,4 +754,84 @@ async fn bounded_diagnostics_correlate_requests_without_capturing_prompt_or_inve
             "UNAVAILABLE"
         );
     }
+}
+
+#[tokio::test]
+async fn timeout_layers_and_limits_match_wire_and_records_without_guessing() {
+    for endpoint in ["chat", "responses"] {
+        for stream in [false, true] {
+            for (prompt, layer, limit) in [
+                ("cli_timeout", "cli_idle", Some(300000)),
+                ("timeout", "unknown", None),
+            ] {
+                let (state, key) = setup().await;
+                state.set_cli_idle_timeout_seconds(300).await.unwrap();
+                let response = router(state.clone())
+                    .oneshot(request(&key, endpoint, prompt, stream, true))
+                    .await
+                    .unwrap();
+                let bytes = response.into_body().collect().await.unwrap().to_bytes();
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                assert!(text.contains("LMX_PROCESS_TIMEOUT"), "{text}");
+                assert!(
+                    text.contains(&format!("\"timeout_layer\":\"{layer}\"")),
+                    "{text}"
+                );
+                // Final persistence is scheduled on body completion.
+                let mut records = rows(&state).await;
+                for _ in 0..100 {
+                    if records[0].status != "in_progress" {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    records = rows(&state).await;
+                }
+                assert_eq!(records[0].status, "timeout");
+                let d = records[0].diagnostics.as_ref().unwrap();
+                assert_eq!(d.timeout_layer.as_deref(), Some(layer));
+                assert_eq!(d.timeout_limit_ms, limit);
+                assert_eq!(d.cli_idle_timeout_seconds, Some(300));
+                assert_ne!(d.reason_code.as_deref(), Some("overall_deadline"));
+            }
+        }
+    }
+}
+#[tokio::test]
+async fn execution_setting_validates_persists_and_preserves_other_settings() {
+    let pool = localmux_storage::open_memory().await.unwrap();
+    localmux_storage::save_setting_bool(&pool, "close_to_tray", true)
+        .await
+        .unwrap();
+    let state = GatewayState::new(pool.clone());
+    state.load_execution_limits().await.unwrap();
+    assert_eq!(state.cli_idle_timeout_seconds(), 180);
+    for bad in [0, 29, 601, u64::MAX] {
+        assert!(state.set_cli_idle_timeout_seconds(bad).await.is_err());
+    }
+    assert_eq!(state.cli_idle_timeout_seconds(), 180);
+    for seconds in [30, 600, 300] {
+        state.set_cli_idle_timeout_seconds(seconds).await.unwrap();
+    }
+    let restarted = GatewayState::new(pool.clone());
+    restarted.load_execution_limits().await.unwrap();
+    assert_eq!(restarted.cli_idle_timeout_seconds(), 300);
+    assert_eq!(
+        localmux_storage::setting_bool(&pool, "close_to_tray")
+            .await
+            .unwrap(),
+        Some(true)
+    );
+    let response = router(restarted)
+        .oneshot(
+            Request::builder()
+                .uri("/api/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(body["execution_limits"]["cli_idle_timeout_seconds"], 300);
+    assert_eq!(body["execution_limits"]["request_timeout_seconds"], 600);
 }

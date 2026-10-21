@@ -1,5 +1,31 @@
 # 交接记录
 
+2026-10-21～22 会话筛选与本地导出交付：先落地[开发计划](development/SESSION_EXPORT_PLAN_2026-10-21.md)，再实现started_at本地时间起点含/终点不含与recorded_only组合过滤；列表与导出共用WHERE，导出全部匹配而非当前50条。六格式JSON/MD/XLSX/CSV/TXT/HTML经原生保存窗口落本地，完整保存已录消息/回答/状态与公共诊断、UTC时间/过滤快照，缺失未知不补造，去除owner_key_id。XLSX三表、长文本按UTF-16分段可重组，CSV防公式、HTML转义且离线无脚本；读事务快照、10000条/64MiB源数据上限、取消不写、原子替换与Unix0600、单导出互斥。无迁移、HTTP导出端点、Provider调用或历史回写。
+
+自动验证：bash scripts/verify.sh Rust138 passed / 0 failed / 2 ignored，前端11/11、类型/构建，全仓Clippy -D warnings通过；最终源大小统计补强后storage13/13复验，最后时间不完整输入保护另测前端/Browser。官方Python OpenAI3.24.0 / TS7.23.0各25 cases通过。独立openpyxl可打开XLSX，按OOXML转义读回36005字符中文/Emoji/CRLF长回答分两段精确重组，CSV标准解析按文档安全前缀完整还原、无公式；HTML离线转义/无执行通过。Browser plugin not available，Playwright+Edge在960×680浅中、760×560深中、800×600浅英验证6格式参数、时间/正文/型号组合、全分页、取消/失败/无效范围；身份/非空/无覆盖层/无相关console/截图/交互均通过。证据/tmp/localmux-export-qa.json、/tmp/localmux-export-fixtures/readback.json。
+
+部署前任务0/in_progress0/integrity ok/FK0，备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-export-20261021-204636.db`（600权限）。已执行deploy-local-macos.sh从codex/dev / efe41fe+当前树构建安装重启 `~/Applications/LocalAiMux.app`，安装/release/build-info SHA256 `b47b889c77eb9da18ead68fcf5219845efe09942c338771a370f51d11c9935a9` 一致；源码manifest一致，PID40980存活，实际x86_64。2026-10-22 01:57北京时间安装版原生键盘输入2026-10-21 00:00至22日00:00、仅已录正文，取消反馈与JSON/MD/XLSX保存成功；三文件各17条、消息/回答/元数据与DB逐项一致，0600。实际验收文件保留于/private/tmp/localmux-native-exports-20261021/，只在本机、不入Git。恢复原API运行，health ok/任务0、限值600/180/并发1/队列30/间隔5保持；旧204条调用与正文/diagnostics/映射、Key/权限、连接及settings不变，只有额度快照正常刷新，integrity ok/FK0。Windows/ARM64原生未实测。
+
+用户明确授权“包含全部未提交的改动”：此次提交范围包括导出、上一轮CLI限时/归因、既有额度一致性与积分调研，交付目标origin/codex/dev；不发布Release。此条为当前收口，旧段“未提交”均为当时状态。计划/UX/数据库/会话契约与CHANGELOG已同步；安装后只有文档收敛。
+
+
+2026-10-21 CLI 可配置限时与归因：API 页「调用限时」提供30–600秒整数、默认180；既有settings保存、启动恢复、入站快照仅影响新请求。Codex/Qoder/CN/CodeBuddy生成读取和Agent typed流等待使用快照，600秒总预算及控制/启动/队列/客户端限制独立。TimeoutAt固定枚举贯穿Chat/Responses流/非流错误与有界diagnostics，记录timeout_layer/timeout_limit_ms/本次配置；旧Timeout保持unknown，不再错误补为overall_deadline，旧行不回填。会话详情显示触发层/限值。无迁移、自动重试/路由/权限变化、新连接或真实生成，默认仍180，用户可按需保存更长值。边界表见[Streaming](api/STREAMING.md#cli-空闲限时与超时归因2026-10-21)。
+
+验证：bash scripts/verify.sh通过，Rust133 passed / 0 failed / 2 ignored、前端9/9及类型/构建；全仓Clippy -D warnings通过。新增离线CLI计时重置、配置边界/持久恢复、两协议流/非流错误与落库同源、超过旧180秒与在途快照回归。测试过程中旧usage断言误匹配UUID中的999，改为匹配total_tokens字段后全量通过。旧SDK venv缺openai，独立/tmp/localmux-timeout-sdk-venv安装官方Python3.24.0，Python与TS7.23.0各25 cases通过。Browser plugin not available，Playwright+Edge合成IPC验证960×680浅中/760×560深中/800×600浅英：非法输入、保存/重新读取、失败保留已保存值、超时详情，页面/非空/无覆盖层/控制台/截图/交互均通过；临时证据/tmp/localmux-timeout-qa.json及截图。
+
+部署前任务0/in_progress0/schema13/integrity ok/FK0，一致备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-timeout-20261021-154756.db`（600权限）。bash scripts/deploy-local-macos.sh从codex/dev / efe41fe+当前树构建安装重启 `~/Applications/LocalAiMux.app`，安装/release/build-info SHA256 `44fe3f06e38852d229828ceecb284c995f3f809c853ae836bd5fc216b4af6ce2` 一致，PID79013存活，实际x86_64。原生API页核对CLI180和独立层说明、重新读取成功，恢复原API运行，health ok/任务0，600/180/并发1/队列30/间隔5保持；health新增CLI/Agent流空闲180。204条旧调用、diagnostics/正文/Responses映射、Key/权限、4连接与settings逐表逐行一致，只有quota_snapshots/quota_buckets正常刷新，integrity ok/FK0。Windows/ARM64及真实慢模型效果未验收。保留既有额度改动和本轮全部本地改动，未提交/推送/发布；部署后仅文档收敛。
+
+同一用户请求另授权至简阶段模式提示：在do-not-litter仅改SettingsPage提示，区分ONLY/FIRST/AUTO和通用备用、LocalMux地址与模型位置，未改实际路由或参数；前端31项及类型/Lint/隔离构建、生产1440/390px通过，静态部署保存点与数据核对见该仓库CURRENT_HANDOFF。无Provider调用/视频重跑/历史改写。
+
+
+2026-10-16 路由额度一致性修复与积分调研：路由页原用只在初载/手动操作更新的旧单值 quota_snapshots，应用页用多窗口 quota_buckets 并每十秒读取本地存储；现移除前端单值状态与调用，两页共用 QuotaLines 与同一 buckets 状态。逐窗口显示剩余/未知、独立观测/重置、超过600秒或未来观测标过期，官方明确零保留；只列当前连接，不合并窗口。旧后端单快照及路由兼容策略保持。修正 CodeBuddy 官方说明链接，避免指向 WorkBuddy 积分。无迁移、权限修改、新连接或真实生成。
+
+已核对当前公开文档并更新 QODER/WORKBUDDY 与[专项调研](adapters/CREDITS_RESEARCH_2026-10-16.md)：Qoder SDK getUsageInfo 提供账户桶，Assistant usage 提供请求积分，Result total_credits 提供当前CLI会话累计；不可重复相加或用累计冒充本轮。仅本机 --version 核对1.1.64，SDK兼容性和真实采集未验收，现有 Adapter 尚不采集积分。WorkBuddy 英文开放文档公开个人 GET /openapi/v2/credit + user.credit.readable，中文页尚缺同节；OAuth需要注册第三方应用，token交换要求不得放入分发客户端的client_secret，需可信后端或厂商桌面授权方案。ACP仅声明usage，未定义可验证的会话Credits；余额差值不充当会话消耗。上述为可行性调查，未新增积分采集实现或读取私有登录态；后续优先Qoder兼容性/映射，再处理WorkBuddy授权与余额。
+
+验证：bash scripts/verify.sh通过（Rust129 passed / 0 failed / 2 ignored；前端9/9、类型/构建通过），最终链接调整后另测typecheck/test通过，diff与本地文档链接检查通过。Browser plugin not available，使用已有Playwright1.62.1 + Edge、127.0.0.1:1420和完整App的合成IPC，覆盖两页同值、手动刷新后切页、十秒轮询、双窗口、零/缺失/估算/过期/未来时间、断开连接过滤；960×680/760×560、浅深/中英无水平溢出。页面身份/非空/无错误覆盖层/控制台/截图及交互通过，未接真实Provider。临时证据 /tmp/localmux-quota-qa.log、/tmp/localmux-quota-960.png、/tmp/localmux-quota-760.png、/tmp/localmux-quota-dark.png；未提交临时测试脚本或截图。
+
+部署前active_tasks=0 / in_progress=0 / schema13 / integrity=ok / FK=0，一致备份 /Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-quota-20261016-165407.db（600权限）。bash scripts/deploy-local-macos.sh从codex/dev / efe41fe + 当前树构建、安装重启 ~/Applications/LocalAiMux.app，安装/release/build-info SHA-256一致 467eea8ad75ba78bedc3e10b1afabbf23feaa3377ee271dd463975b8990ecbeb，PID32050存活；原生应用页/路由页同时显示Codex300分钟窗口剩余88%、10080分钟窗口91%，各自重置时间保留；其余3连接额度未知。原API运行状态已由原生页面恢复，health=ok / 任务0，600/180/并发1/队列30/间隔5保持。Key/权限/凭据摘要、4连接、settings/录制设置、187条旧调用和正文/diagnostics/Response映射逐行不变，integrity=ok / FK=0。实际二进制x86_64，Windows/ARM64未实测；新增积分采集仍未实施。本轮保留本地改动，不提交/推送/发布；部署后仅文档收敛。
+
 2026-10-16 业务验收后续交付：用户在本聊天确认“已完成业务验收”，据此推进剩余本仓库工作；该结论未扩写为全部型号/缓存收益或平台验收，未修改live_verified。完成缓存诊断UI与保存：有界diagnostics兼容新增reported_input_tokens / reported_cached_input_tokens / usage_status，均取统一校验后的provider_reported + request/last_turn快照；详情显示输入、缓存子集、有效占比和报告状态，未知不补零、明确零保留、零/未知分母或越界缓存不计算比例。旧记录/正文不回填，store:false不保存，无新迁移、无真实生成、新连接或至简修改。M2仍待精确上游公开支持与真实控制试验。
 
 验证：整树 `bash scripts/verify.sh` Rust129 passed / 0 failed / 2 ignored，前端9/9、类型/构建及全仓Clippy -D warnings通过；官方Python OpenAI3.24.0 / TypeScript7.23.0各25 cases / 0 failed。prefix_cache覆盖两协议×流/非流×九种用量×store true/false（72种请求），核对标准/扩展/落库同源、累计终态不覆盖本次快照、默认不录正文；旧JSON读取后内容不变回归通过。合成矩阵使用独立测试Key保持原RPM门禁，不改变生产限额。Browser插件未提供（Browser plugin not available），使用现有Playwright1.62.1 + Edge、回环http://127.0.0.1:1420、合成IPC验证详情展开/收起、可信/明确零/零分母/缺失/越界/累计/旧记录7类，中英文、浅深、960×680/800×600/760×560/1120×760无水平溢出；页面身份/非空/无错误覆盖层、控制台/截图/交互检查通过。临时证据 `/tmp/localmux-cache-ui-960.png`、`/tmp/localmux-cache-ui-760.png`、`/tmp/localmux-cache-ui-dark.png`，未提交测试脚本或截图。原生安装版已打开会话详情核对缓存字段及旧记录缓存未知、原录制保持开启；未发模型请求。

@@ -71,7 +71,10 @@ pub async fn command_output(
         })
     })
     .await
-    .map_err(|_| AdapterError::Timeout)?
+    .map_err(|_| AdapterError::TimeoutAt {
+        layer: crate::TimeoutLayer::CliCommand,
+        limit,
+    })?
 }
 pub async fn raw_output(executable: &Path, args: &[&str]) -> Result<Vec<u8>, AdapterError> {
     if !executable.is_file() {
@@ -110,6 +113,7 @@ pub async fn stream_json(
     executable: &Path,
     args: &[String],
     prompt: String,
+    idle_timeout: Duration,
     parse_delta: fn(&Value) -> Option<String>,
     map_error: fn(&Value) -> AdapterError,
 ) -> Result<(EventStream, Arc<Mutex<Option<String>>>), AdapterError> {
@@ -117,13 +121,14 @@ pub async fn stream_json(
         return Err(AdapterError::ProviderUnavailable);
     }
     let command = Command::new(executable);
-    stream_json_command(command, args, prompt, parse_delta, map_error).await
+    stream_json_command(command, args, prompt, idle_timeout, parse_delta, map_error).await
 }
 
 pub async fn stream_json_command(
     mut command: Command,
     args: &[String],
     prompt: String,
+    idle_timeout: Duration,
     parse_delta: fn(&Value) -> Option<String>,
     map_error: fn(&Value) -> AdapterError,
 ) -> Result<(EventStream, Arc<Mutex<Option<String>>>), AdapterError> {
@@ -152,7 +157,7 @@ pub async fn stream_json_command(
         let mut final_text = String::new();
         let mut metadata = None;
         loop {
-            let Some(value) = timeout(CLI_IDLE_TIMEOUT, read_json_line(&mut reader)).await.map_err(|_| AdapterError::Timeout)?? else { break; };
+            let Some(value) = timeout(idle_timeout, read_json_line(&mut reader)).await.map_err(|_| AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliIdle, limit: idle_timeout })?? else { break; };
             if let Some(id) = value["session_id"].as_str().or_else(|| value["sessionId"].as_str()) { *shared.lock().await = Some(id.to_owned()); }
             if let Some(error) = value.get("error") { Err(map_error(error))?; }
             if let Some(delta) = parse_delta(&value) { saw_delta = true; yield StreamEvent::Delta(delta); }
@@ -167,7 +172,7 @@ pub async fn stream_json_command(
                 if let Some(text) = value["result"].as_str().or_else(|| value["response"].as_str()) { final_text = text.to_owned(); }
             }
         }
-        let status = timeout(Duration::from_secs(5), child.wait()).await.map_err(|_| AdapterError::ProcessFailed)?.map_err(|_| AdapterError::ProcessFailed)?;
+        let status = timeout(Duration::from_secs(5), child.wait()).await.map_err(|_| AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliExit, limit: Duration::from_secs(5) })?.map_err(|_| AdapterError::ProcessFailed)?;
         if !status.success() { Err(AdapterError::ProcessFailed)?; }
         if !saw_delta && !final_text.is_empty() { yield StreamEvent::Delta(final_text); }
     let metadata = metadata.ok_or(AdapterError::ProcessFailed)?;
@@ -201,6 +206,7 @@ mod tests {
                 Command::new("/bin/sh"),
                 &["-c".into(), script],
                 "fixture".into(),
+                CLI_IDLE_TIMEOUT,
                 |_| None,
                 |_| AdapterError::ProcessFailed,
             )
@@ -234,6 +240,31 @@ mod reliability_tests {
         );
         assert!(read_json_line(&mut valid).await.unwrap().is_none());
         assert!(bounded_output(&oversized[..]).await.is_err());
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn configured_cli_idle_limit_resets_on_complete_events() {
+        let script = "cat >/dev/null; printf '%s\\n' '{\"delta\":\"first\"}'; sleep 0.15; printf '%s\\n' '{\"delta\":\"second\"}'; sleep 0.15; printf '%s\\n' '{\"type\":\"result\"}'";
+        for (ms, succeeds) in [(40, false), (250, true)] {
+            let (stream, _) = stream_json_command(
+                Command::new("/bin/sh"),
+                &["-c".into(), script.into()],
+                "fixture".into(),
+                Duration::from_millis(ms),
+                |v| v["delta"].as_str().map(str::to_owned),
+                |_| AdapterError::ProcessFailed,
+            )
+            .await
+            .unwrap();
+            let result = crate::collect_events(stream).await;
+            if succeeds {
+                assert_eq!(result.unwrap().text, "firstsecond");
+            } else {
+                assert!(
+                    matches!(result, Err(AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliIdle, limit }) if limit == Duration::from_millis(ms))
+                );
+            }
+        }
     }
     #[cfg(unix)]
     async fn stopped(pid: &str) {
@@ -275,6 +306,7 @@ mod reliability_tests {
                 command,
                 &["-c".into(), script.into()],
                 "synthetic".into(),
+                CLI_IDLE_TIMEOUT,
                 |v| v["delta"].as_str().map(str::to_owned),
                 |_| AdapterError::ProcessFailed,
             )
@@ -317,7 +349,13 @@ mod reliability_tests {
             Duration::from_millis(30),
         )
         .await;
-        assert!(matches!(output, Err(AdapterError::Timeout)));
+        assert!(matches!(
+            output,
+            Err(AdapterError::TimeoutAt {
+                layer: crate::TimeoutLayer::CliCommand,
+                ..
+            })
+        ));
         assert!(matches!(
             command_output(
                 Command::new("/synthetic/nonexistent"),
@@ -336,6 +374,7 @@ mod reliability_tests {
                 Command::new("/bin/sh"),
                 &["-c".into(), script.into()],
                 "synthetic".into(),
+                CLI_IDLE_TIMEOUT,
                 |v| v["delta"].as_str().map(str::to_owned),
                 |_| AdapterError::ProcessFailed,
             )

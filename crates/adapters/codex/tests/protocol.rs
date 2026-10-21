@@ -84,6 +84,7 @@ async fn schema_refresh_handles_future_versions_missing_fields_and_recovery() {
             );
         }
         let request = NormalizedRequest {
+            cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
             model: "codex/fixture-model".into(),
             prompt: "hello".into(),
             messages: Vec::new(),
@@ -170,6 +171,7 @@ async fn official_protocol_shape_handles_catalog_turn_and_resume() {
         Some(75.0)
     );
     let request = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "codex/fixture-model".into(),
         prompt: "hello".into(),
         messages: Vec::new(),
@@ -191,6 +193,7 @@ async fn official_protocol_shape_handles_catalog_turn_and_resume() {
     assert_eq!(resumed.text, "fixture reply");
     let mut stream = adapter
         .invoke_stream(NormalizedRequest {
+            cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
             model: "codex/fixture-model".into(),
             prompt: "stream".into(),
             messages: Vec::new(),
@@ -212,6 +215,7 @@ async fn upstream_error_notification_fails_promptly_without_waiting_for_retry() 
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/app_server.sh"),
     );
     let request = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "codex/fixture-model".into(),
         prompt: "error-fixture".into(),
         messages: Vec::new(),
@@ -245,6 +249,7 @@ async fn layered_instructions_effort_and_last_turn_usage_preserve_public_semanti
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/app_server.sh"),
     );
     let request = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "codex/fixture-model".into(),
         prompt: "negotiation-fixture".into(),
         messages: [
@@ -294,6 +299,7 @@ async fn cache_usage_missing_invalid_and_unknown_are_not_zero_filled() {
     ] {
         let response = adapter
             .invoke(NormalizedRequest {
+                cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
                 model: "codex/fixture-model".into(),
                 prompt: prompt.into(),
                 messages: vec![],

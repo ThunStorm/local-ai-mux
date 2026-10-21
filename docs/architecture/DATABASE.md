@@ -22,3 +22,6 @@ SQLite 通过版本化 migration 初始化：`0001` 设置、`0002` API Key 哈�
 `0013` 在 call_records 添加可空 request_id 与受 8192 字节限制的 diagnostics JSON 及关联 ID 索引；最新 migration 为 13。没有新历史表、无正文复制、无旧记录回填。保留现有终态更新条件/事务，store:false 不写入新字段。升级需任务 0、完整性检查和 SQLite 一致备份；旧程序 SQLx 校验无法直接打开新版本数据库，回滚见[运行诊断](SESSION_MODEL.md#有界运行诊断2026-10-10--m3)。
 
 2026-10-16：现有0013 diagnostics JSON兼容新增可空reported_input_tokens / reported_cached_input_tokens / usage_status，来自统一校验的provider_reported + request/last_turn快照。缓存是input子集；无input或cached>input时缓存为空，未知不补零。无新迁移、不回填旧JSON，不保存Prompt/回答/凭据；store:false仍跳过元数据和正文，旧版本可忽略新增可选键。
+
+
+2026-10-21：CallFilter增started_from（>=）、started_before（<）及recorded_only，使用同一QueryBuilder构建列表/导出WHERE。export_calls以单一SQLite读事务读取匹配元数据与正文，清除分页before限制、按sequence倒序输出；源数据预估上限64MiB/10000条，超限报错不截断。导出读取不修改settings/历史/正文状态，无Schema迁移。

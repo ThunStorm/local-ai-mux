@@ -1,4 +1,5 @@
 //! One monotonic budget from HTTP admission, including queue and response consumption.
+use axum::response::IntoResponse;
 use axum::{body::Body, extract::Request, middleware::Next, response::Response};
 use futures_util::StreamExt;
 use tokio::time::Instant;
@@ -6,6 +7,7 @@ use tokio::time::Instant;
 #[derive(Clone)]
 pub(crate) struct ExecutionBudget {
     pub accepted: Instant,
+    pub cli_idle_timeout: std::time::Duration,
     pub deadline: Instant,
     pub request_id: String,
     pub response_id: std::sync::Arc<std::sync::Mutex<Option<String>>>,
@@ -17,6 +19,7 @@ impl Default for ExecutionBudget {
         let accepted = Instant::now();
         Self {
             accepted,
+            cli_idle_timeout: super::STREAM_IDLE_TIMEOUT,
             deadline: accepted + super::REQUEST_TIMEOUT,
             request_id: format!("req_{}", uuid::Uuid::new_v4().simple()),
             response_id: Default::default(),
@@ -32,6 +35,55 @@ impl Default for ExecutionBudget {
     }
 }
 impl ExecutionBudget {
+    pub fn with_cli_idle(seconds: u64) -> Self {
+        let value = Self {
+            cli_idle_timeout: std::time::Duration::from_secs(seconds),
+            ..Default::default()
+        };
+        value.metrics.lock().unwrap().cli_idle_timeout_seconds = Some(seconds);
+        value
+    }
+    pub fn record_timeout(&self, kind: &localmux_adapter_sdk::AdapterError) {
+        if let Some(fields) = super::timeout_fields(kind) {
+            let mut m = self.metrics.lock().unwrap();
+            m.timeout_layer = fields["timeout_layer"].as_str().map(str::to_owned);
+            m.timeout_limit_ms = fields["timeout_limit_ms"].as_u64();
+            m.reason_code = fields["reason_code"].as_str().map(str::to_owned);
+        }
+    }
+    pub fn timeout_limiting_layer(&self) -> &'static str {
+        match self.metrics.lock().unwrap().timeout_layer.as_deref() {
+            Some(s) if s.starts_with("gateway_") => "gateway",
+            Some("unknown") => "unknown",
+            Some(_) => "adapter",
+            None => "public_interface",
+        }
+    }
+    pub fn record_deadline(
+        &self,
+        layer: localmux_adapter_sdk::TimeoutLayer,
+        limit: std::time::Duration,
+    ) {
+        let (layer, limit) = if self.expired() {
+            (
+                localmux_adapter_sdk::TimeoutLayer::GatewayOverall,
+                super::REQUEST_TIMEOUT,
+            )
+        } else {
+            (layer, limit)
+        };
+        self.record_timeout(&localmux_adapter_sdk::AdapterError::TimeoutAt { layer, limit });
+    }
+    pub fn timeout_at(
+        &self,
+        layer: localmux_adapter_sdk::TimeoutLayer,
+        limit: std::time::Duration,
+    ) -> Response {
+        self.record_deadline(layer, limit);
+        let m = self.snapshot();
+        (axum::http::StatusCode::GATEWAY_TIMEOUT, axum::Json(serde_json::json!({"error":{"message":"Local execution timed out","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","timeout_layer":m.timeout_layer,"timeout_limit_ms":m.timeout_limit_ms,"reason_code":m.reason_code,"limiting_layer":"gateway","retryable":false,"request_id":self.request_id}}))).into_response()
+    }
+
     pub fn next_sequence(&self) -> u64 {
         self.response_sequence
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -54,11 +106,9 @@ impl ExecutionBudget {
         Instant::now() >= self.deadline
     }
     pub fn timeout_response(&self) -> Response {
-        self.metrics.lock().unwrap().reason_code = Some("overall_deadline".into());
-        super::error(
-            axum::http::StatusCode::GATEWAY_TIMEOUT,
-            "LMX_PROCESS_TIMEOUT",
-            "Request deadline exceeded",
+        self.timeout_at(
+            localmux_adapter_sdk::TimeoutLayer::GatewayOverall,
+            super::REQUEST_TIMEOUT,
         )
     }
 }
@@ -91,7 +141,7 @@ pub(crate) async fn admit(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let budget = ExecutionBudget::default();
+    let budget = ExecutionBudget::with_cli_idle(state.cli_idle_timeout_seconds());
     let responses = request.uri().path() == "/v1/responses";
     let run = (request.method() == axum::http::Method::POST).then(|| state.begin_run());
     request.extensions_mut().insert(budget.clone());
@@ -176,7 +226,7 @@ impl Drop for StreamTask {
     }
 }
 fn timeout_frame(budget: &ExecutionBudget, responses: bool) -> axum::body::Bytes {
-    let failure = serde_json::json!({"error":{"message":"Request deadline exceeded","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","reason_code":"overall_deadline","limiting_layer":"gateway","retryable":false,"request_id":budget.request_id}});
+    let failure = serde_json::json!({"error":{"message":"Request deadline exceeded","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","reason_code":"overall_deadline","timeout_layer":"gateway_overall","timeout_limit_ms":super::REQUEST_TIMEOUT.as_millis() as u64,"limiting_layer":"gateway","retryable":false,"request_id":budget.request_id}});
     let frame = if responses {
         let value = serde_json::json!({"type":"response.failed","sequence_number":budget.next_sequence(),"response":{"id":budget.response_id.lock().unwrap().clone(),"object":"response","status":"failed","output":[],"error":failure["error"]}});
         format!("event: response.failed\ndata: {}\n\n", value)

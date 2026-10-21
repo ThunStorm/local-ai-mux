@@ -39,7 +39,10 @@ impl CodexAdapter {
             localmux_adapter_sdk::cli::raw_output(&self.executable, &["--version"]),
         )
         .await
-        .map_err(|_| AdapterError::Timeout)??;
+        .map_err(|_| AdapterError::TimeoutAt {
+            layer: localmux_adapter_sdk::TimeoutLayer::CliCommand,
+            limit: Duration::from_secs(5),
+        })??;
         parse_version(&String::from_utf8_lossy(&output)).ok_or(AdapterError::Unsupported)
     }
     pub async fn connect(&self) -> Result<Vec<ModelDescriptor>, AdapterError> {
@@ -195,6 +198,7 @@ impl CodexAdapter {
     ) -> Result<(EventStream, String), AdapterError> {
         let normalization =
             (request.messages.len() > 1).then(|| "leading_instructions_v1".to_owned());
+        let cli_idle_timeout = request.cli_idle_timeout;
         let (mut process, id, turn_id, pending, actual_model) =
             self.prepare_turn(request, session).await?;
         let session_id = id.clone();
@@ -205,7 +209,7 @@ impl CodexAdapter {
                 let mut final_text = String::new();
                 let mut metadata = ResponseMetadata { actual_model, actual_model_source: Some("app_server_thread".into()), normalization, ..Default::default() };
                 loop {
-                    let event = match pending.next() { Some(event) => event, None => process.read(localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT).await? };
+                    let event = match pending.next() { Some(event) => event, None => process.read(cli_idle_timeout, localmux_adapter_sdk::TimeoutLayer::CliIdle).await? };
                     if event["params"]["threadId"].as_str().is_some_and(|value| value != id) { continue; }
                     if event["params"]["turnId"].as_str().is_some_and(|value| value != turn_id) { continue; }
                     match event["method"].as_str() {
@@ -396,13 +400,17 @@ impl AppServer {
             .await
             .map_err(|_| AdapterError::ProcessFailed)
     }
-    async fn read(&mut self, wait: Duration) -> Result<Value, AdapterError> {
+    async fn read(
+        &mut self,
+        wait: Duration,
+        layer: localmux_adapter_sdk::TimeoutLayer,
+    ) -> Result<Value, AdapterError> {
         timeout(
             wait,
             localmux_adapter_sdk::cli::read_json_line(&mut self.stdout),
         )
         .await
-        .map_err(|_| AdapterError::Timeout)??
+        .map_err(|_| AdapterError::TimeoutAt { layer, limit: wait })??
         .ok_or(AdapterError::ProcessFailed)
     }
     async fn request(
@@ -417,7 +425,12 @@ impl AppServer {
         let mut pending = Vec::new();
         let mut pending_bytes = 0usize;
         loop {
-            let message = self.read(Duration::from_secs(15)).await?;
+            let message = self
+                .read(
+                    Duration::from_secs(15),
+                    localmux_adapter_sdk::TimeoutLayer::CliRpc,
+                )
+                .await?;
             if message.get("id").and_then(Value::as_u64) == Some(id) {
                 if let Some(error) = message.get("error") {
                     return Err(map_rpc_error(error));

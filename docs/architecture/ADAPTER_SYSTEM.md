@@ -32,3 +32,6 @@ Codex 子进程在 macOS 缺少显式代理环境时遵从现有系统固定 HTT
 2026-10-14 Codex：移除 system/developer/effort 的精确版本白名单，改从当前安装 CLI 自动导出非 experimental 公开 Schema，逐字段核对 start/resume/turn 映射，推理档位取协议与型号目录交集。导出失败不隐藏用户模型，能力保持 UNKNOWN 并记录安全原因，默认单 user 省略未核对指令；用户前置规则不可丢弃。10秒 owned 进程、三个普通文件各1MiB、本地引用深度8、临时清理与原五分钟 Gateway 目录刷新共同限定开销；真实效果仍未验证，不跨应用自动改快照。详见 [Codex Adapter](../adapters/CODEX.md#supported-versions)。
 
 2026-10-14：缓存细分经统一 TokenUsage 校验，只接受可信 request/last_turn 且 cached≤input；未知不补零、不累加。typed 收集与 Gateway wire 复用此校验，累计终态不覆盖最后可信快照。能力 details 增加可选 api_support，分别声明 Chat/Responses 原生续接和缓存控制；Codex 另核对公开 resume.threadId，CLI 桥核对 --resume，HTTP Chat 桥不实现 native resume。缓存控制由 strict schema 限制为 UNSUPPORTED，底层保持 UNKNOWN；声明不改变请求/路由权限，也不标记真实生成通过。见[本轮计划](../LOCALAIMUX_PREFIX_CACHE_AND_SESSION_CAPABILITY_ASSESSMENT.md)。
+
+
+2026-10-21：NormalizedRequest.cli_idle_timeout 是本机执行快照，不进入 ChatParameters 或上游请求。CLI 生成读取采用快照，TimeoutAt 的固定 TimeoutLayer 与 Duration 保留真实触发层；兼容 Timeout 表示来源未知。目录/RPC/退出固定限时独立，见 [超时层](../api/STREAMING.md#cli-空闲限时与超时归因2026-10-21)。

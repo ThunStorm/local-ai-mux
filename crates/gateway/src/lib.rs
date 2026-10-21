@@ -16,7 +16,7 @@ use axum::{
 use futures_util::StreamExt;
 use localmux_adapter_sdk::{
     Adapter, AdapterError, MockEcho, NormalizedMessage, NormalizedRequest, ResponseMetadata,
-    StreamEvent, TokenUsage,
+    StreamEvent, TimeoutLayer, TokenUsage,
 };
 use localmux_api_types::{
     AssistantMessage, ChatRequest, ChatResponse, Choice, ModelList, ModelObject, Usage,
@@ -61,6 +61,8 @@ pub struct GatewayState {
     limiter: Arc<KeyRateLimiter>,
     active_runs: Arc<AtomicUsize>,
     agent_lanes: Arc<Mutex<HashMap<String, AgentLane>>>,
+    cli_idle_seconds: Arc<std::sync::atomic::AtomicU64>,
+    limits_update: Arc<Mutex<()>>,
     adapter_runs: Arc<std::sync::Mutex<HashMap<String, usize>>>,
 }
 struct AdapterRun(Arc<std::sync::Mutex<HashMap<String, usize>>>, String);
@@ -93,8 +95,36 @@ impl GatewayState {
             limiter: Arc::new(KeyRateLimiter::default()),
             active_runs: Arc::new(AtomicUsize::new(0)),
             agent_lanes: Arc::new(Mutex::new(HashMap::new())),
+            cli_idle_seconds: Arc::new(std::sync::atomic::AtomicU64::new(180)),
+            limits_update: Arc::new(Mutex::new(())),
             adapter_runs: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
+    }
+    pub fn cli_idle_timeout_seconds(&self) -> u64 {
+        self.cli_idle_seconds.load(Ordering::Relaxed)
+    }
+    pub async fn load_execution_limits(&self) -> anyhow::Result<()> {
+        let _lock = self.limits_update.lock().await;
+        let stored =
+            localmux_storage::setting_string(&self.pool, "cli_idle_timeout_seconds").await?;
+        let seconds = match stored {
+            None => 180,
+            Some(s) => s.parse::<u64>()?,
+        };
+        anyhow::ensure!((30..=600).contains(&seconds), "invalid CLI idle timeout");
+        self.cli_idle_seconds.store(seconds, Ordering::Relaxed);
+        Ok(())
+    }
+    pub async fn set_cli_idle_timeout_seconds(&self, seconds: u64) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (30..=600).contains(&seconds),
+            "CLI idle timeout must be 30–600 seconds"
+        );
+        let _lock = self.limits_update.lock().await;
+        sqlx::query("INSERT INTO settings(key,value) VALUES('cli_idle_timeout_seconds',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            .bind(seconds.to_string()).execute(&self.pool).await?;
+        self.cli_idle_seconds.store(seconds, Ordering::Relaxed);
+        Ok(())
     }
     pub fn mock(pool: SqlitePool) -> Self {
         let state = Self::new(pool);
@@ -393,7 +423,7 @@ impl GatewayState {
             .is_some_and(|record| record.id == id))
     }
     pub async fn verify_reported_model(&self, model: &str) -> Result<(), AdapterError> {
-        let budget = execution::ExecutionBudget::default();
+        let budget = execution::ExecutionBudget::with_cli_idle(self.cli_idle_timeout_seconds());
         let _run = self.begin_run();
         let mut guard = recording::CallGuard::start(
             &self.pool,
@@ -415,6 +445,11 @@ impl GatewayState {
         .await
         .unwrap_or(Err(AdapterError::Timeout));
         if let Err(kind) = &result {
+            if budget.expired() {
+                budget.record_deadline(TimeoutLayer::GatewayOverall, REQUEST_TIMEOUT);
+            } else {
+                budget.record_timeout(kind);
+            }
             call.fail(adapter_error_details(kind).1);
         }
         guard
@@ -462,6 +497,7 @@ impl GatewayState {
         let response = tokio::time::timeout_at(
             call.budget().deadline,
             adapter.invoke(NormalizedRequest {
+                cli_idle_timeout: call.budget().cli_idle_timeout,
                 model: model.into(),
                 prompt: prompt.into(),
                 messages: vec![NormalizedMessage {
@@ -499,7 +535,7 @@ pub fn router(state: GatewayState) -> Router {
         .route(
             "/api/health",
             get(|State(state): State<GatewayState>| async move {
-                Json(serde_json::json!({"status":"ok","active_tasks":state.active_tasks(),"execution_limits":{"request_timeout_seconds":REQUEST_TIMEOUT.as_secs(),"stream_idle_timeout_seconds":STREAM_IDLE_TIMEOUT.as_secs(),"agent_max_concurrency":1,"agent_queue_timeout_seconds":AGENT_QUEUE_TIMEOUT.as_secs(),"agent_request_interval_seconds":AGENT_REQUEST_INTERVAL.as_secs()}}))
+                Json(serde_json::json!({"status":"ok","active_tasks":state.active_tasks(),"execution_limits":{"request_timeout_seconds":REQUEST_TIMEOUT.as_secs(),"cli_idle_timeout_seconds":state.cli_idle_timeout_seconds(),"agent_stream_idle_timeout_seconds":state.cli_idle_timeout_seconds(),"stream_idle_timeout_seconds":STREAM_IDLE_TIMEOUT.as_secs(),"agent_max_concurrency":1,"agent_queue_timeout_seconds":AGENT_QUEUE_TIMEOUT.as_secs(),"agent_request_interval_seconds":AGENT_REQUEST_INTERVAL.as_secs()}}))
             }),
         )
         .route("/v1/models", get(models))
@@ -703,9 +739,10 @@ fn breaker_error(state: &GatewayState, adapter_id: &str, kind: &AdapterError) {
     let duration = match kind {
         AdapterError::RateLimited => Some(Duration::from_secs(60)),
         AdapterError::QuotaExhausted => Some(Duration::from_secs(300)),
-        AdapterError::ProviderUnavailable | AdapterError::ProcessFailed | AdapterError::Timeout => {
-            Some(Duration::from_secs(30))
-        }
+        AdapterError::ProviderUnavailable
+        | AdapterError::ProcessFailed
+        | AdapterError::Timeout
+        | AdapterError::TimeoutAt { .. } => Some(Duration::from_secs(30)),
         _ => None,
     };
     if let Some(duration) = duration {
@@ -975,6 +1012,7 @@ async fn chat_inner(
         }
     }
     let normalized = NormalizedRequest {
+        cli_idle_timeout: call.budget().cli_idle_timeout,
         model: actual_model.clone(),
         prompt: prompt.to_owned(),
         messages: request
@@ -1020,6 +1058,11 @@ async fn chat_inner(
         Err(response) => return *response,
     };
     let deadline = call.budget().deadline;
+    let stream_idle = if adapter.kind() == AdapterKind::Agent {
+        call.budget().cli_idle_timeout
+    } else {
+        STREAM_IDLE_TIMEOUT
+    };
     let id = format!("chatcmpl-{}", Uuid::new_v4().simple());
     let created = now();
     call.target(&actual_model, &adapter_id, &id, None);
@@ -1035,6 +1078,7 @@ async fn chat_inner(
         {
             Ok(Ok(stream)) => stream,
             Ok(Err(kind)) => {
+                call.budget().record_timeout(&kind);
                 breaker_error(&state, &adapter_id, &kind);
                 return adapter_error(kind);
             }
@@ -1042,11 +1086,9 @@ async fn chat_inner(
                 state
                     .breaker
                     .open(&adapter_id, Instant::now(), Duration::from_secs(30));
-                return error(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "LMX_PROCESS_TIMEOUT",
-                    "Upstream first response timed out",
-                );
+                return call
+                    .budget()
+                    .timeout_at(TimeoutLayer::GatewayStartup, Duration::from_secs(30));
             }
         };
         drop(startup_timer);
@@ -1061,7 +1103,7 @@ async fn chat_inner(
             let mut completed = false;
             let mut output_bytes = 0usize;
             loop {
-                let next_deadline = (tokio::time::Instant::now() + STREAM_IDLE_TIMEOUT).min(deadline);
+                let next_deadline = (tokio::time::Instant::now() + stream_idle).min(deadline);
                 match tokio::time::timeout_at(next_deadline, provider_stream.next()).await {
                     Ok(Some(Ok(StreamEvent::Delta(delta)))) if !completed => {
                         call.first_output(&delta);
@@ -1077,15 +1119,15 @@ async fn chat_inner(
                     },
                     Ok(Some(Ok(_))) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Ok(None) => { if completed { route_state.breaker.success(&adapter_id); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
-                    Ok(Some(Err(kind))) => { breaker_error(&route_state, &adapter_id, &kind); failure = Some(adapter_error_details(&kind).1); break; },
-                    Err(_) => { route_state.breaker.open(&adapter_id, Instant::now(), Duration::from_secs(30)); failure = Some("LMX_PROCESS_TIMEOUT"); break; },
+                    Ok(Some(Err(kind))) => { call.budget().record_timeout(&kind); breaker_error(&route_state, &adapter_id, &kind); failure = Some(adapter_error_details(&kind).1); break; },
+                    Err(_) => { call.budget().record_deadline(TimeoutLayer::GatewayStreamIdle, stream_idle); route_state.breaker.open(&adapter_id, Instant::now(), Duration::from_secs(30)); failure = Some("LMX_PROCESS_TIMEOUT"); break; },
                 }
             }
             drop(adapter_timer);
             drop(adapter_run);
             if let Some(code) = failure {
                 call.fail(code);
-                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":"public_interface","retryable":false,"request_id":call.budget().request_id}}).to_string()));
+                yield Ok(Event::default().data(serde_json::json!({"error":{"message":"Upstream stream failed or timed out","type":"localmux_error","code":code,"error_code":code,"param":null,"limiting_layer":call.budget().timeout_limiting_layer(),"timeout_layer":call.budget().snapshot().timeout_layer,"timeout_limit_ms":call.budget().snapshot().timeout_limit_ms,"reason_code":call.budget().snapshot().reason_code,"retryable":false,"request_id":call.budget().request_id}}).to_string()));
             } else {
                 call.result(&metadata);
                 let last = serde_json::json!({"id":id,"object":"chat.completion.chunk","created":created,"model":model,"choices":[{"index":0,"delta":{},"finish_reason":metadata.finish_reason.openai()}],"localmux":wire_metadata(&metadata, &id, &model, normalization.as_deref(), &call.budget())});
@@ -1107,16 +1149,11 @@ async fn chat_inner(
             response
         }
         Ok(Err(error_kind)) => {
+            call.budget().record_timeout(&error_kind);
             breaker_error(&state, &adapter_id, &error_kind);
             return adapter_error(error_kind);
         }
-        Err(_) => {
-            return error(
-                StatusCode::GATEWAY_TIMEOUT,
-                "LMX_PROCESS_TIMEOUT",
-                "Upstream timed out",
-            )
-        }
+        Err(_) => return call.budget().timeout_response(),
     };
     response.metadata = response.metadata.validated();
     drop(adapter_timer);
@@ -1224,7 +1261,29 @@ fn connection_cooldown(state: &GatewayState, adapter_id: &str) -> Option<Respons
         )
     })
 }
+fn timeout_fields(kind: &AdapterError) -> Option<serde_json::Value> {
+    match kind {
+        AdapterError::TimeoutAt { layer, limit } => Some(
+            serde_json::json!({"timeout_layer":layer.code(),"timeout_limit_ms":limit.as_millis() as u64,"reason_code":if matches!(layer, TimeoutLayer::GatewayOverall) { "overall_deadline".to_string() } else { format!("{}_timeout",layer.code()) },"limiting_layer":layer.limiting_layer()}),
+        ),
+        AdapterError::Timeout => Some(
+            serde_json::json!({"timeout_layer":"unknown","timeout_limit_ms":null,"reason_code":"timeout_unknown","limiting_layer":"unknown"}),
+        ),
+        _ => None,
+    }
+}
 fn adapter_error(kind: AdapterError) -> Response {
+    if let Some(fields) = timeout_fields(&kind) {
+        let mut e = serde_json::json!({"message":"Local execution timed out","type":"localmux_error","code":"LMX_PROCESS_TIMEOUT","error_code":"LMX_PROCESS_TIMEOUT","retryable":false});
+        e.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        return (
+            StatusCode::GATEWAY_TIMEOUT,
+            Json(serde_json::json!({"error":e})),
+        )
+            .into_response();
+    }
     if let AdapterError::InvalidParameter {
         param,
         reason,
@@ -1246,10 +1305,10 @@ fn adapter_error(kind: AdapterError) -> Response {
 }
 fn adapter_error_details(kind: &AdapterError) -> (StatusCode, &'static str, &'static str) {
     match kind {
-        AdapterError::Timeout => (
+        AdapterError::Timeout | AdapterError::TimeoutAt { .. } => (
             StatusCode::GATEWAY_TIMEOUT,
             "LMX_PROCESS_TIMEOUT",
-            "Upstream idle timed out",
+            "Local execution timed out",
         ),
         AdapterError::ContextLimit => (
             StatusCode::BAD_REQUEST,

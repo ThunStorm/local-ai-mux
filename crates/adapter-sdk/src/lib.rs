@@ -12,6 +12,8 @@ use tokio::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct NormalizedRequest {
+    /// Local execution snapshot, never forwarded as a provider parameter.
+    pub cli_idle_timeout: std::time::Duration,
     pub model: String,
     pub prompt: String,
     pub messages: Vec<NormalizedMessage>,
@@ -395,6 +397,43 @@ pub enum AdapterError {
     ProcessFailed,
     #[error("provider request timed out")]
     Timeout,
+    #[error("local timeout at {layer:?}")]
+    TimeoutAt {
+        layer: TimeoutLayer,
+        limit: std::time::Duration,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum TimeoutLayer {
+    CliIdle,
+    CliRpc,
+    CliCommand,
+    CliExit,
+    GatewayStartup,
+    GatewayStreamIdle,
+    GatewayOverall,
+    ProviderHttp,
+}
+impl TimeoutLayer {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::CliIdle => "cli_idle",
+            Self::CliRpc => "cli_rpc",
+            Self::CliCommand => "cli_command",
+            Self::CliExit => "cli_exit",
+            Self::GatewayStartup => "gateway_startup",
+            Self::GatewayStreamIdle => "gateway_stream_idle",
+            Self::GatewayOverall => "gateway_overall",
+            Self::ProviderHttp => "provider_http",
+        }
+    }
+    pub fn limiting_layer(self) -> &'static str {
+        match self {
+            Self::GatewayStartup | Self::GatewayStreamIdle | Self::GatewayOverall => "gateway",
+            _ => "adapter",
+        }
+    }
 }
 
 #[async_trait]
@@ -527,6 +566,7 @@ mod tests {
     #[test]
     fn agent_role_boundary_rejects_history() {
         let request = NormalizedRequest {
+            cli_idle_timeout: crate::cli::CLI_IDLE_TIMEOUT,
             model: "codex/model".into(),
             prompt: "next".into(),
             messages: vec![

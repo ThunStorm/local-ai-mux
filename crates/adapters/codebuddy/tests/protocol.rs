@@ -11,6 +11,7 @@ async fn selected_model_stream_and_session_fixture() {
     let response = adapter
         .invoke_with_session(
             NormalizedRequest {
+                cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
                 model: "codebuddy/fixture-model".into(),
                 prompt: "hello".into(),
                 messages: Vec::new(),
@@ -79,6 +80,7 @@ async fn leading_system_instructions_map_and_developer_is_rejected() {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codebuddy.sh"),
     );
     let mut request = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "codebuddy/fixture-model".into(),
         prompt: "question".into(),
         messages: [("system", "one"), ("system", "two"), ("user", "question")]

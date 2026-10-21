@@ -34,3 +34,6 @@ M2/M4 门禁补强：catalog.observed_at 在实际刷新时保存，读取不随
 v2 `chat.details.session_resume/prompt_cache_control` 的可选 `api_support` 按完整端点路径声明有效能力。Chat 原生续接 UNSUPPORTED；Responses 按精确型号与当前 Adapter 公开契约为 SUPPORTED/UNSUPPORTED/UNKNOWN，证据过期 SUPPORTED 降 UNKNOWN；仍需 owner/最新成功 Response/相同模型与 Adapter/原生 ID。两个入口的显式缓存控制均 UNSUPPORTED（gateway strict schema），底层 native UNKNOWN。缓存计数不开放 prompt_cache_options/prompt_cache_key 等字段，未知字段继续400；无隐式线程聚合。详见[实施与验收](../LOCALAIMUX_PREFIX_CACHE_AND_SESSION_CAPABILITY_ASSESSMENT.md#六2026-10-14-实施与验收)。
 
 2026-10-16：有界localmux.timing快照兼容包含reported_input_tokens、reported_cached_input_tokens和usage_status可选诊断键，与标准usage/扩展usage同源，仅记录上游可信本次快照。旧客户端可忽略；旧记录不回填，无新请求参数或缓存控制透传。store:false仍不保存任何本次记录，诊断中的计数不代表费用或订阅额度收益。
+
+
+2026-10-21：health.execution_limits 兼容新增 cli_idle_timeout_seconds 与 agent_stream_idle_timeout_seconds，报告当前已保存的 CLI/Agent 流式空闲限时；原 stream_idle_timeout_seconds=180 继续表示 HTTP Provider typed 流等待。600秒总期、队列/串行/间隔保持；设置仅经桌面 IPC 修改，生成请求不能覆盖。见 [限时契约](STREAMING.md#cli-空闲限时与超时归因2026-10-21)。

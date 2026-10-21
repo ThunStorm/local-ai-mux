@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- 会话记录新增开始时间段与已录正文筛选；全部匹配结果可通过原生保存窗口导出JSON/Markdown/XLSX/CSV/TXT/HTML，保留录制状态与未知值，长正文分段、文件原子保存。
+
+- CLI 空闲限时可在 API 页配置并持久保存（30–600秒，默认180），新请求使用入站快照；Chat/Responses 与调用详情记录实际超时层和限值，未知超时不再误归总期。
+
+- Fix Routing official quota to share Apps & connections' multi-window buckets, polling, freshness and rendering; retain unknown values and independent reset times, and hide disconnected entries. Correct the CodeBuddy guide to avoid implying WorkBuddy quota sharing.
+- Recheck public Qoder SDK account/request/session Credits and WorkBuddy personal-credit OAuth API; document integration, desktop authorization and session-attribution limits without adding provider calls or claiming live support.
+
 - Show provider-reported input/cache counts and a valid cached share in call details; persist optional bounded diagnostic counts without migrating or backfilling history, preserve unknown/zero semantics and honor store:false.
 
 - Project validated per-request cached input counts into standard Chat/Responses usage details while retaining the localmux extension, unknown values and unchanged totals; preserve the last trustworthy usage snapshot across cumulative completion events.

@@ -57,6 +57,7 @@ async fn provider_uses_exact_configured_endpoint_and_parses_sse() {
     assert_eq!(models[0].id, "glm/actual-model");
     assert_eq!(models[0].cost_mode, CostMode::Unknown);
     let request = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "glm/actual-model".into(),
         prompt: "hello".into(),
         messages: [
@@ -110,6 +111,7 @@ async fn provider_uses_exact_configured_endpoint_and_parses_sse() {
     }
     drop(bodies);
     let mut rejected = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "glm/actual-model".into(),
         prompt: "x".into(),
         messages: vec![],

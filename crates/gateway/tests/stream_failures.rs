@@ -400,3 +400,53 @@ async fn agent_lane_is_shared_between_models_keys_and_protocols_and_releases_on_
     assert_eq!(calls.load(Ordering::SeqCst), 3);
     assert_eq!(state.active_tasks(), 0);
 }
+
+#[tokio::test]
+async fn agent_stream_uses_admission_snapshot_and_can_wait_beyond_old_idle_limit() {
+    for path in ["/v1/chat/completions", "/v1/responses"] {
+        let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+        state.set_cli_idle_timeout_seconds(300).await.unwrap();
+        state
+            .register(Arc::new(DiagnosticAdapter(
+                Arc::new(AtomicUsize::new(0)),
+                AdapterKind::Agent,
+                Arc::new(AtomicUsize::new(0)),
+            )))
+            .await;
+        let (_, key) = state
+            .create_key_with_policy(
+                &["chat:invoke", "responses:invoke", "agent:invoke"],
+                localmux_security::KeyRestrictions {
+                    execution_profile: localmux_security::ExecutionProfile::ReadOnlyAgent,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let body = if path.ends_with("responses") {
+            serde_json::json!({"model":"diagnostic/luna","input":"never","stream":true})
+        } else {
+            chat("never", "diagnostic/luna")
+        };
+        let response = router(state.clone())
+            .oneshot(post(&key, path, body))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        state.set_cli_idle_timeout_seconds(30).await.unwrap();
+        tokio::time::pause();
+        let text = String::from_utf8(
+            response
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(text.contains("delayed answer"), "{text}");
+        assert!(!text.contains("LMX_PROCESS_TIMEOUT"), "{text}");
+        tokio::time::resume();
+    }
+}

@@ -405,7 +405,8 @@ async fn untrusted_final_usage_cannot_erase_the_last_valid_request_snapshot() {
             .unwrap();
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let text = std::str::from_utf8(&bytes).unwrap();
-        assert!(!text.contains("999"));
+        // UUIDs and elapsed timings may legitimately contain these digits.
+        assert!(!text.contains("\"total_tokens\":999"));
         assert!(text.contains("\"total_tokens\":14"));
         let record = localmux_storage::list_calls(&state.pool, &Default::default())
             .await

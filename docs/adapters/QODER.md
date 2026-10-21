@@ -31,7 +31,7 @@ CLI 官方支持 macOS/Windows；本机已安装 Qoder CLI 1.1.64，登录后的
 
 ## Quota discovery
 
-官方 `/usage` 是交互面板，本阶段没有稳定可解析的剩余额度接口。Phase 6 不会从本地用量伪造官方剩余量。
+现有 Adapter 尚未实现机器读取余额，仍返回未知。2026-10-16 复核：官方 Agent SDK 已公开 `getUsageInfo()` 账户余额、Assistant 请求积分与 Result 会话累计积分；本机 CLI 1.1.64 的兼容性及真实采集未验收，详见[积分调研](CREDITS_RESEARCH_2026-10-16.md)。不会从本地用量反推官方剩余额度。
 
 ## Free-tier detection
 

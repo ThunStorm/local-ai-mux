@@ -48,3 +48,15 @@ request_bytes 是 Gateway 收到的 JSON Body 字节；非流 response_bytes 是
 2026-10-14：能力目录 `chat.details.session_resume.api_support` 分别报告 Chat（UNSUPPORTED）和 Responses 的当前 Adapter 契约；不替代本节 owner、最新成功响应、模型/Adapter 黏性和原生 ID 门禁。prompt_cache_control 在两入口均 UNSUPPORTED；报告 cached tokens 与续接/正文录制是独立事实，无全局隐藏会话，无新迁移或历史回填。
 
 2026-10-16：缓存诊断复用有界call_records.diagnostics，新增可空reported_input_tokens、reported_cached_input_tokens和usage_status（provider_reported / unknown）。与标准响应及localmux.usage复用同一来源/本次口径校验；缓存包含在input中，不加到input/total。记录详情仅对可信且非零input计算占比，未知/旧记录不补填，明确零可显示0。旧诊断JSON缺键可读，无迁移，无Prompt持久化变化；store:false优先禁止保存。用户已确认业务验收，具体型号/缓存收益未提供样本，本轮不扩大live_verified或M2支持结论。
+
+
+2026-10-21：diagnostics 兼容增加可空 timeout_layer、timeout_limit_ms、cli_idle_timeout_seconds，分别记录实际触发层、该计时器限值和入站配置。未知 Adapter 超时为 unknown，不再冒充 overall_deadline；旧行不改，store:false 不落库，无迁移。API 与详情同源，具体范围见 [CLI 限时](../api/STREAMING.md#cli-空闲限时与超时归因2026-10-21)。
+
+
+## 会话本地导出（2026-10-21）
+
+导出入口仅本机桌面IPC，支持JSON/MD/XLSX/CSV/TXT/HTML。列表与导出组合来源、状态、型号子串、conversation_id、开始时间>=started_from、开始时间<started_before及recorded_only；界面输入本地时间转UTC秒。export_calls忽略分页before，在单一读事务内取得元数据/正文快照；取样时间exported_at与UTC ISO时间、schema_version=1、过滤条件一并保存。运行中/partial/stopped如实保留，缺正文null/not_recorded，未知用量null/空白，不变为零。store:false无记录可导，不回填、不读取外部历史、不调用Provider。
+
+JSON保留全部公共元数据、diagnostics及消息数组/answer/state，去除owner_key_id；MD/TXT/HTML为阅读形式且附完整元数据，MD正文采用安全动态围栏、HTML全量转义并禁脚本/外部资源。CSV每调用一行，含record_json/messages_json/answer，UTF-8 BOM和RFC4180引号/换行，公式危险单元格前加单引号（精确保真优先JSON）。XLSX三表：Calls摘要、Content完整元数据及逐消息/回答、About筛选与说明；正文按最多30000 UTF-16单位拆段，call_id/message_index/part顺序可重组，无内容截断。数值在Excel可精确表达时写数字，其余文字均literal string，未知空白；过长摘要字段指向Content中完整record_json。UTC ISO字符串方便跨时区阅读，原Unix秒仍保留。
+
+导出最多10000条/64MiB源数据，编码结果最多256MiB；超限要求缩小范围。一次仅允许一个导出；用户通过原生保存窗口选本地路径，扩展名须匹配。后台转换后同目录临时文件写入、sync和原子替换，取消/生成失败/写入失败不覆盖已有文件，Unix输出0600，拒绝非普通目标（含符号链接）。正文和原始错误不进入日志，前端不接收批量正文，只返回条数/路径；没有新增HTTP导出端点。实现依赖[Tauri官方Dialog](https://docs.rs/tauri-plugin-dialog/latest/tauri_plugin_dialog/struct.FileDialogBuilder.html)与[rust_xlsxwriter](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/workbook/struct.Workbook.html)。

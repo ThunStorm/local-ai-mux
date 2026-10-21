@@ -355,9 +355,28 @@ impl CallGuard {
             }
             if record.status == "timeout" {
                 diagnostics.cancel_requested = true;
-                diagnostics
-                    .reason_code
-                    .get_or_insert("overall_deadline".into());
+                diagnostics.reason_code.get_or_insert(
+                    if self.call.budget().expired() {
+                        "overall_deadline"
+                    } else {
+                        "timeout_unknown"
+                    }
+                    .into(),
+                );
+                if diagnostics.timeout_layer.is_none() {
+                    diagnostics.timeout_layer = Some(
+                        if self.call.budget().expired() {
+                            "gateway_overall"
+                        } else {
+                            "unknown"
+                        }
+                        .into(),
+                    );
+                    if self.call.budget().expired() {
+                        diagnostics.timeout_limit_ms =
+                            Some(super::REQUEST_TIMEOUT.as_millis() as u64);
+                    }
+                }
             }
             record.diagnostics = Some(sqlx::types::Json(diagnostics));
             record.finished_at = Some(now());

@@ -11,6 +11,7 @@ async fn headless_cli_catalog_stream_and_session_fixture() {
     let response = adapter
         .invoke_with_session(
             NormalizedRequest {
+                cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
                 model: "qoder/current-model".into(),
                 prompt: "hello".into(),
                 messages: Vec::new(),
@@ -35,6 +36,7 @@ async fn leading_system_instructions_map_and_developer_is_rejected() {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/qoder.sh"),
     );
     let mut request = NormalizedRequest {
+        cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
         model: "qoder/current-model".into(),
         prompt: "question".into(),
         messages: [("system", "one"), ("system", "two"), ("user", "question")]
@@ -70,6 +72,7 @@ async fn cn_bridge_uses_its_own_model_identity_with_leading_system() {
     assert!(models.iter().all(|m| m.id.starts_with("qoder-cn/")));
     let response = adapter
         .invoke(NormalizedRequest {
+            cli_idle_timeout: localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT,
             model: "qoder-cn/current-model".into(),
             prompt: "question".into(),
             messages: [("system", "one"), ("system", "two"), ("user", "question")]

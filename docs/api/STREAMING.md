@@ -32,3 +32,22 @@ Gateway Chat/Responses 非流式、原生续接和 SSE 使用 600 秒总执行�
 显式模型短测试同样从内部入口开始计时；桌面 120 秒客户端期限不变。ActiveRun 从 HTTP admission 覆盖预检和等待，SSE Body 丢弃后释放；非流/错误在生成响应后结束。错误 Body 可在总期到达后传递安全超时诊断，不继续启动上游。回滚 M1 可恢复旧的执行后起算语义，无数据库迁移，Key/Scope/连接不变。
 
 2026-10-10 M1 门禁补强：流生产者独立拥有单调 deadline、原 SSE Body/CallGuard/Adapter/lane，以最多单帧缓冲转发；总期包括等待客户端背压，Body 从未被消费也会到期释放资源。外部 Body 丢弃会 abort 生产任务，清理在 Tokio 下一调度发生；迟到缓存帧不能冒充完成。标准 15 秒注释心跳与180秒上游空闲保持不变。取消指 Gateway 实际观察到的 HTTP 对端关闭；客户端通过代理且代理保留连接时，不能推断原客户端已经断开，仍受总期限保护。隔离 SDK 测试固定 NO_PROXY=127.0.0.1,localhost，不更改用户代理配置。
+
+## CLI 空闲限时与超时归因（2026-10-21）
+
+API 页「调用限时」可保存 `cli_idle_timeout_seconds`，整数 30–600 秒，默认 180；写入既有 settings 表，无迁移。启动恢复设置，读取/保存失败明确报错；在 HTTP 入站或模型短测试开始时取快照，仅新请求采用新值，执行中的任务不变。Codex 生成事件、Qoder/CN/CodeBuddy JSONL 读取使用该快照；等待完整事件而非单个字节，任一完整 CLI 事件重新计时。Agent 的 Gateway typed 上游事件等待也使用该值，Provider HTTP 路径仍为 180 秒；CLI 非文字通知不等于 Gateway typed 事件，哪个层先到期就记录哪个层。SSE 注释心跳不延长这些等待。
+
+| 超时层 timeout_layer | 限值 / 观测范围 |
+| --- | --- |
+| cli_idle | 本次配置；下一条完整 CLI 输出事件 |
+| cli_rpc | Codex 控制响应每次读取 15 秒 |
+| cli_command | 公开目录/版本命令自己的固定限值，按实际触发计时器记录 |
+| cli_exit | JSONL EOF 后等待进程退出 5 秒 |
+| gateway_startup | 流式 Adapter 启动 30 秒，受剩余总预算约束 |
+| gateway_stream_idle | 下一条 typed 上游事件；Agent 同 CLI 配置，HTTP Provider 180 秒 |
+| gateway_overall | 入站起 600 秒，包含预检、排队、间隔、上游与流式背压 |
+| unknown | 未提供具体层的兼容 Adapter 超时；不推测为总期限 |
+
+非流式错误、Chat SSE、Responses failed 保留 `LMX_PROCESS_TIMEOUT`，兼容新增 `timeout_layer`、`timeout_limit_ms`、`reason_code` 与 `limiting_layer`；HTTP 200 之后仍通过错误帧报告。新 call_records.diagnostics 同源保存触发层、限值与本次 CLI 设置；旧行/旧 JSON 缺键保持未知，不回填。`store:false` 仍不保存。没有变更自动重试、路由或权限。
+
+其他限制独立存在：Agent 队列 30 秒为本机忙 429；HTTP Adapter 请求总限时 120 秒；桌面试对话客户端总限时 120 秒，外部客户端可更早断开。CLI 配置不延长这些限制，Gateway 仅观察到断开时记取消，不能据此反推客户端计时器或远端执行/计费状态。各计时器以单调时间运行，同刻到期时记录本机实际观察的触发层。

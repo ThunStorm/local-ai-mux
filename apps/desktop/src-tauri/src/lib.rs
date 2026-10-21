@@ -1,3 +1,4 @@
+mod session_export;
 use localmux_adapter_sdk::Adapter;
 mod default_key;
 mod native_material;
@@ -758,6 +759,22 @@ async fn quota_buckets(
 }
 
 #[tauri::command]
+async fn cli_idle_timeout_get(control: tauri::State<'_, GatewayControl>) -> Result<u64, String> {
+    Ok(control.state.cli_idle_timeout_seconds())
+}
+#[tauri::command]
+async fn cli_idle_timeout_set(
+    control: tauri::State<'_, GatewayControl>,
+    seconds: u64,
+) -> Result<u64, String> {
+    control
+        .state
+        .set_cli_idle_timeout_seconds(seconds)
+        .await
+        .map_err(|_| "保存失败：CLI 空闲限时须为 30–600 秒整数".to_string())?;
+    Ok(control.state.cli_idle_timeout_seconds())
+}
+#[tauri::command]
 async fn call_recording_get(
     control: tauri::State<'_, GatewayControl>,
 ) -> Result<localmux_storage::RecordingSetting, String> {
@@ -1150,6 +1167,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                 let control = window.state::<GatewayControl>();
@@ -1182,6 +1200,7 @@ pub fn run() {
                 &data_dir.join("localmux.db"),
             ))?;
             let state = localmux_gateway::GatewayState::new(pool.clone());
+            tauri::async_runtime::block_on(state.load_execution_limits())?;
             if let Some(json) = tauri::async_runtime::block_on(
                 localmux_storage::load_route_policy(&pool, "default"),
             )? {
@@ -1299,10 +1318,13 @@ pub fn run() {
             routing_refresh,
             quota_snapshots,
             quota_buckets,
+            cli_idle_timeout_get,
+            cli_idle_timeout_set,
             call_recording_get,
             call_recording_set,
             call_record_content,
             call_records_list,
+            session_export::call_records_export,
             call_records_delete,
             sessions_list,
             session_events,

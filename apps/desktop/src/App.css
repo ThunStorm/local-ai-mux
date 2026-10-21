@@ -355,3 +355,15 @@ summary { cursor: pointer; }
 .dialogue-answer { background: var(--surface); border: 1px solid var(--line); }
 
 .call-metric { display: contents; }
+
+/* Export and time filters share the existing compact controls. */
+fieldset.call-filter-fields { border: 0; padding: 0; margin: 0; }
+.call-filter-fields input[type="datetime-local"] { min-width: 0; max-width: 100%; }
+.call-filters .call-recorded-only { display: flex; align-items: center; gap: 8px; align-self: end; min-height: 36px; }
+.call-filters .call-recorded-only input { width: 16px; height: 16px; min-height: 16px; flex: none; }
+.call-time-help { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; }
+.call-export-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 0 0 20px; }
+.call-export-controls label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.call-export-controls select { height: 36px; min-width: 100px; padding: 0 10px; }
+.call-export-controls > p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.call-export-controls > [role="alert"] { color: var(--danger); }

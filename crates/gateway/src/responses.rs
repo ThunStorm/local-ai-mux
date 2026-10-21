@@ -12,7 +12,7 @@ use axum::{
 use futures_util::StreamExt;
 use localmux_adapter_sdk::{
     Adapter, AdapterError, FinishReason, NormalizedRequest, NormalizedResponse, ResponseMetadata,
-    StreamEvent, TokenUsage,
+    StreamEvent, TimeoutLayer, TokenUsage,
 };
 use localmux_api_types::{response_input_text, ResponsesRequest};
 use localmux_domain::{CostMode, HealthStatus};
@@ -387,6 +387,7 @@ async fn create_inner(
         Some(&context.conversation_id),
     );
     let normalized = NormalizedRequest {
+        cli_idle_timeout: call.budget().cli_idle_timeout,
         model: context.model.clone(),
         prompt,
         messages: Vec::new(),
@@ -416,6 +417,11 @@ async fn create_inner(
         Err(response) => return *response,
     };
     let deadline = call.budget().deadline;
+    let stream_idle = if context.adapter.kind() == localmux_domain::AdapterKind::Agent {
+        call.budget().cli_idle_timeout
+    } else {
+        super::STREAM_IDLE_TIMEOUT
+    };
     let adapter_run = state.begin_adapter(context.adapter.id());
     let adapter_timer = call.budget().measure(super::execution::Phase::Adapter);
     if request.stream {
@@ -437,15 +443,14 @@ async fn create_inner(
                 )
             }
             Ok(Err(kind)) => {
+                call.budget().record_timeout(&kind);
                 super::breaker_error(&state, context.adapter.id(), &kind);
                 return adapter_error(kind);
             }
             Err(_) => {
-                return error(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "LMX_PROCESS_TIMEOUT",
-                    "Upstream start timed out",
-                )
+                return call
+                    .budget()
+                    .timeout_at(TimeoutLayer::GatewayStartup, Duration::from_secs(30))
             }
         };
         drop(startup_timer);
@@ -465,11 +470,12 @@ async fn create_inner(
             let mut result = ResponseMetadata::default();
             let mut completed = false;
             loop {
-                let next_deadline = (tokio::time::Instant::now() + super::STREAM_IDLE_TIMEOUT).min(deadline);
+                let next_deadline = (tokio::time::Instant::now() + stream_idle).min(deadline);
                 let next = match tokio::time::timeout_at(next_deadline, provider_stream.next()).await {
                     Ok(Some(next)) => next,
                     Ok(None) => { if completed { stream_state.breaker.success(context.adapter.id()); } else { failure = Some("LMX_STREAM_INTERRUPTED"); } break; },
                     Err(_) => {
+                        call.budget().record_deadline(TimeoutLayer::GatewayStreamIdle, stream_idle);
                         stream_state.breaker.open(context.adapter.id(), Instant::now(), Duration::from_secs(30));
                         failure = Some("LMX_PROCESS_TIMEOUT"); break;
                     },
@@ -486,6 +492,7 @@ async fn create_inner(
                     Ok(StreamEvent::Completed(mut reported)) if !completed => { reported = reported.validated(); reported.usage = reported.usage.or(result.usage.take()); result = reported; call.metadata(&result); completed = true; },
                     Ok(_) => { failure = Some("LMX_INVALID_RESPONSE"); break; },
                     Err(kind) => {
+                        call.budget().record_timeout(&kind);
                         super::breaker_error(&stream_state, context.adapter.id(), &kind);
                         failure = Some(super::adapter_error_details(&kind).1); break;
                     },
@@ -495,7 +502,7 @@ async fn create_inner(
             drop(adapter_run);
             if let Some(code) = failure {
                 call.fail(code);
-                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed","request_id":call.budget().request_id,"param":null,"limiting_layer":"public_interface","retryable":false}}})));
+                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"status":"failed","error":{"code":code,"message":"Upstream stream failed","request_id":call.budget().request_id,"param":null,"limiting_layer":call.budget().timeout_limiting_layer(),"timeout_layer":call.budget().snapshot().timeout_layer,"timeout_limit_ms":call.budget().snapshot().timeout_limit_ms,"reason_code":call.budget().snapshot().reason_code,"retryable":false}}})));
                 return;
             }
             let native_id = session.provider_session_id.lock().await.clone().or(context.provider_session_id);
@@ -526,13 +533,7 @@ async fn create_inner(
     .await
     {
         Ok(result) => result,
-        Err(_) => {
-            return error(
-                StatusCode::GATEWAY_TIMEOUT,
-                "LMX_PROCESS_TIMEOUT",
-                "Upstream timed out",
-            )
-        }
+        Err(_) => return call.budget().timeout_response(),
     };
     let mut result = match result {
         Ok(result) => result,
@@ -544,6 +545,7 @@ async fn create_inner(
             )
         }
         Err(kind) => {
+            call.budget().record_timeout(&kind);
             super::breaker_error(&state, context.adapter.id(), &kind);
             return adapter_error(kind);
         }

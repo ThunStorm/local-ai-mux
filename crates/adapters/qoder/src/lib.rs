@@ -141,6 +141,7 @@ impl QoderAdapter {
             &self.executable,
             &args,
             request.prompt,
+            request.cli_idle_timeout,
             parse_delta,
             map_error,
         )

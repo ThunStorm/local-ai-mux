@@ -25,3 +25,7 @@
 ## 后续接入门槛
 
 若厂商提供面向第三方的 WorkBuddy 桌面官方 CLI/ACP/API，需核实可从用户显式授权获得身份、只读动态目录、费用/额度来源，以及能禁用工具/MCP/写入；然后单独实现 `workbuddy/` 身份与测试。企业 Agent API 应另行按企业授权合同评估。当前保留 WorkBuddy 桌面检测，不注册 Gateway，不读取私有缓存，不将 CodeBuddy 连接迁到 WorkBuddy。
+
+## 2026-10-16 积分接口更新
+
+英文开放平台文档已公开个人积分 `GET /openapi/v2/credit`（OAuth scope `user.credit.readable`），中文页内容尚不同步；账户总额/已用可用于派生剩余量。需要注册第三方应用及用户授权，当前 token 交换要求客户端不得暴露的 client_secret，桌面分发方案仍待确认；未找到能验证桌面会话 Credits 的公开字段。余额接口不代表 WorkBuddy 已可作为模型上游接入，现有登记和 CodeBuddy CLI 连接不继承此权限。详见[积分调研与录制方案](CREDITS_RESEARCH_2026-10-16.md)。
