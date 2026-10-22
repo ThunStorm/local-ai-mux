@@ -1,5 +1,10 @@
 # 交接记录
 
+2026-10-22 会话工具区紧凑化：按用户截图将完整说明默认折叠，筛选控件降为32px、压缩间距，查询/刷新/格式/导出/清理合并为一行，成功导出路径单行省略（title保留全文）、错误不隐藏。默认960×680原生窗口首屏直接展示记录；合成IPC在960×680/760×560/800×600中英浅深验证初始首条top339.5px、带成功提示top364.9px，无溢出/相关console错误，说明展开及原6格式/筛选/取消/失败交互通过。pnpm typecheck/test（11/11）/build通过，无后端或数据契约修改。
+
+已执行deploy-local-macos.sh从0c4eadb+当前树安装重启，安装/release/build-info SHA256 `a768f3238fba7b9e4b2f99715381dddebdd6cb03fddd8cdd4571018be490aad4`一致，PID74142存活，原生首屏截图复核通过并恢复API运行、health ok/任务0。部署前任务0/一致备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-compact-20261022-111633.db`，旧204条调用、正文、Key、连接及settings不变，仅额度快照刷新，integrity ok/FK0。文档/CHANGELOG已同步，延续本功能交付范围提交至origin/codex/dev；Windows/ARM64原生未复验。
+
+
 2026-10-21～22 会话筛选与本地导出交付：先落地[开发计划](development/SESSION_EXPORT_PLAN_2026-10-21.md)，再实现started_at本地时间起点含/终点不含与recorded_only组合过滤；列表与导出共用WHERE，导出全部匹配而非当前50条。六格式JSON/MD/XLSX/CSV/TXT/HTML经原生保存窗口落本地，完整保存已录消息/回答/状态与公共诊断、UTC时间/过滤快照，缺失未知不补造，去除owner_key_id。XLSX三表、长文本按UTF-16分段可重组，CSV防公式、HTML转义且离线无脚本；读事务快照、10000条/64MiB源数据上限、取消不写、原子替换与Unix0600、单导出互斥。无迁移、HTTP导出端点、Provider调用或历史回写。
 
 自动验证：bash scripts/verify.sh Rust138 passed / 0 failed / 2 ignored，前端11/11、类型/构建，全仓Clippy -D warnings通过；最终源大小统计补强后storage13/13复验，最后时间不完整输入保护另测前端/Browser。官方Python OpenAI3.24.0 / TS7.23.0各25 cases通过。独立openpyxl可打开XLSX，按OOXML转义读回36005字符中文/Emoji/CRLF长回答分两段精确重组，CSV标准解析按文档安全前缀完整还原、无公式；HTML离线转义/无执行通过。Browser plugin not available，Playwright+Edge在960×680浅中、760×560深中、800×600浅英验证6格式参数、时间/正文/型号组合、全分页、取消/失败/无效范围；身份/非空/无覆盖层/无相关console/截图/交互均通过。证据/tmp/localmux-export-qa.json、/tmp/localmux-export-fixtures/readback.json。

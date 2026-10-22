@@ -95,7 +95,11 @@ export default function CallRecords({ locale }: { locale: "zh" | "en" }) {
   }
   return <section aria-label={zh ? "调用历史" : "Call history"}>
     <div className="call-recording-control"><label><input type="checkbox" role="switch" checked={recording === true} disabled={recording === null || recordingBusy || exporting} onChange={event => void setCapture(event.target.checked)} /><span>{zh ? "记录对话内容" : "Record dialogue content"}</span></label><span className="call-recording-state" role="status">{recordingBusy ? zh ? "正在保存…" : "Saving…" : recording === null ? recordingError ? zh ? "录制状态未知" : "Recording unknown" : zh ? "正在读取…" : "Loading…" : recording ? zh ? "录制已开启" : "Recording on" : zh ? "录制已关闭" : "Recording off"}</span></div>
+    <details className="call-help"><summary>{zh ? "录制与导出说明" : "Recording and export details"}</summary>
     <p className="call-records-description">{zh ? "开启后录制新调用的完整输入与回答（凭据会脱敏）；关闭立即停止正文录制，已录内容保留。关闭时仍记录调用信息；store:false 不保存。" : "Records full inputs and answers for new calls, with credential redaction. Turning off stops active capture and keeps saved text. Call metadata continues; store:false opts out."}</p>
+      <p id="call-time-help">{zh ? "按调用开始时间筛选，使用本地时区；留空为不限。包含起点，不包含终点。" : "Filters call start time in your local timezone. Blank means unrestricted; start included, end excluded."}</p>
+      <p>{zh ? "导出全部匹配调用，不限当前页；包含已录输入与回答。运行中/部分录制按快照导出，未录正文明确标注。" : "Exports all matching calls, across pages, including recorded inputs and answers. Active/partial recordings are snapshots; missing content stays marked."}</p>
+    </details>
     {recordingError && <div role="alert"><p>{recordingError}</p>{recording === null && <button disabled={recordingBusy} onClick={() => void retryRecording()}>{zh ? "重新读取状态" : "Reload setting"}</button>}</div>}
     <form className="call-filters" onSubmit={event => { event.preventDefault(); setModel(draft.trim()); }}>
       <fieldset className="call-filter-fields" disabled={exporting}>
@@ -106,18 +110,16 @@ export default function CallRecords({ locale }: { locale: "zh" | "en" }) {
       <label>{zh ? "结束时间（不含）" : "Before (exclusive)"}<input type="datetime-local" min="1970-01-01T00:00" value={beforeTime} onInput={e => setInvalidBefore(!e.currentTarget.validity.valid)} onChange={e => { setBeforeTime(e.target.value); setInvalidBefore(!e.target.validity.valid); }} aria-describedby="call-time-help" /></label>
       <label className="call-recorded-only"><input type="checkbox" checked={recordedOnly} onChange={e => setRecordedOnly(e.target.checked)} />{zh ? "仅含已录正文" : "Recorded content only"}</label>
       </fieldset>
-      <p className="call-time-help" id="call-time-help">{zh ? "按调用开始时间筛选，使用本地时区；留空为不限。包含起点，不包含终点。" : "Filters call start time in your local timezone. Blank means unrestricted; start included, end excluded."}</p>
+
       {!rangeValid && <p role="alert">{exportError("INVALID_TIME_RANGE", zh)}</p>}
-      <div className="call-filter-actions">
-      <button className="primary" disabled={busy || exporting || !rangeValid}>{zh ? "查询" : "Search"}</button><button type="button" disabled={busy || exporting || !rangeValid} onClick={() => void load()}>{zh ? "刷新" : "Refresh"}</button><button className="call-clear" type="button" disabled={busy || exporting || records.length === 0} onClick={() => setConfirm("all")}>{zh ? "清理已结束记录" : "Clear finished records"}</button>
+      <div className="call-toolbar-actions">
+        <div className="call-filter-actions"><button className="primary" disabled={busy || exporting || !rangeValid}>{zh ? "查询" : "Search"}</button><button type="button" disabled={busy || exporting || !rangeValid} onClick={() => void load()}>{zh ? "刷新" : "Refresh"}</button></div>
+        <div className="call-export-controls"><span className="call-select-label"><select aria-label={zh ? "导出格式" : "Export format"} value={format} onChange={e => setFormat(e.target.value)} disabled={exporting}>{["json", "md", "xlsx", "csv", "txt", "html"].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></span><button type="button" disabled={busy || exporting || !rangeValid || draft.trim() !== model || records.length === 0} onClick={() => void exportRecords()}>{exporting ? zh ? "正在导出…" : "Exporting…" : zh ? "导出全部筛选结果…" : "Export all matches…"}</button></div>
+        <button className="call-clear" type="button" disabled={busy || exporting || records.length === 0} onClick={() => setConfirm("all")}>{zh ? "清理已结束记录" : "Clear finished records"}</button>
       </div>
+      {draft.trim() !== model && <p className="call-toolbar-message">{zh ? "请先点击查询应用型号筛选。" : "Apply the model filter with Search first."}</p>}
+      {exportMessage && <p className="call-toolbar-message export-message" title={exportMessage} role={exportFailed ? "alert" : "status"}>{exportMessage}</p>}
     </form>
-    <div className="call-export-controls">
-      <label>{zh ? "导出格式" : "Export format"}<select aria-label={zh ? "导出格式" : "Export format"} value={format} onChange={e => setFormat(e.target.value)} disabled={exporting}>{["json", "md", "xlsx", "csv", "txt", "html"].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></label>
-      <button disabled={busy || exporting || !rangeValid || draft.trim() !== model || records.length === 0} onClick={() => void exportRecords()}>{exporting ? zh ? "正在导出…" : "Exporting…" : zh ? "导出全部筛选结果…" : "Export all matches…"}</button>
-      <p>{zh ? "导出全部匹配调用，不限当前页；包含已录输入与回答。运行中/部分录制按快照导出，未录正文明确标注。" : "Exports all matching calls, across pages, including recorded inputs and answers. Active/partial recordings are snapshots; missing content stays marked."}{draft.trim() !== model && (zh ? " 请先点击查询应用型号筛选。" : " Apply the model filter with Search first.")}</p>
-      {exportMessage && <p className="export-message" role={exportFailed ? "alert" : "status"}>{exportMessage}</p>}
-    </div>
     {conversation && <p>{zh ? "当前会话" : "Conversation"}: {conversation} <button disabled={exporting} onClick={() => setConversation(null)}>{zh ? "查看全部调用" : "Show all calls"}</button></p>}
     {confirm && <div className="call-confirm" role="alert"><p>{zh ? confirm === "all" ? "清理全部已结束的调用记录？这包含筛选范围外的记录；续接会话映射仍保留。" : "删除这条调用记录？续接会话映射仍保留。" : confirm === "all" ? "Delete all finished calls, including those outside this filter? Resume mappings are retained." : "Delete this call? Resume mappings are retained."}</p><button disabled={busy || exporting || !rangeValid} onClick={() => void remove()}>{zh ? "确认清理" : "Confirm deletion"}</button><button disabled={busy || exporting || !rangeValid} onClick={() => setConfirm(null)}>{zh ? "取消" : "Cancel"}</button></div>}
     {error && <p role="alert">{error}</p>}
