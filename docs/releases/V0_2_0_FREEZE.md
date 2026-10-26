@@ -31,9 +31,9 @@
 
 ## 本机部署证据
 
-- 部署源：codex/dev / 84d09e2 + 本轮工作树；`bash scripts/deploy-local-macos.sh`正常编译/安装/退出旧版/重启完成，未强杀运行任务。
+- 最终实现部署源：codex/dev / dec15ee（clean）；后续只有封版证据文档收敛；`bash scripts/deploy-local-macos.sh`正常编译/安装/退出旧版/重启完成，未强杀运行任务。
 - 部署前：20261026-104852（北京时间），active_tasks=0/in_progress=0，Schema13，integrity=ok/FK0；一致备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-v020-20261026-104852.db`，权限0600。
-- 安装：`~/Applications/LocalAiMux.app`，实际Mach-O x86_64；安装/release/build-info SHA256 `c991a531624b4071291e1b6cb036cf46e07b513e8acc42be5f02b4294ac2251a`一致。程序PID 43913，2026-10-26T10:56:21.394051+08:00核验存活。
+- 安装：`~/Applications/LocalAiMux.app`，实际Mach-O x86_64；安装/release/build-info SHA256 `bf410a01cf7ab005b48702e54f8ae30555d5e4ae05c37eda59b68cde69a63873`一致。程序PID 99856，2026-10-26T14:41:40.662762+08:00核验存活。
 - 数据：原257条调用、全部正文/diagnostics/Responses映射、Key/权限、4连接及settings逐表逐行不变；只发生正常quota_snapshots/quota_buckets刷新，integrity=ok/FK0。CLI1200验收后恢复原600，其他保护值180/并发1/队列30/间隔5保持；无新连接、真实生成或迁移。
 - 本地证据：`dist/localmux/v0.2.0-evidence/`（Git忽略目录）保存前后检查、源码manifest、自动日志与读回/Browser结果；实际用户正文/凭据未纳入仓库或远程上传。旧SDK临时环境缺包，已在新的独立venv重装同版本后完成验证，没有改生产Python环境。
 
@@ -50,3 +50,9 @@ Windows/ARM64原生安装、Windows系统凭据库/进程树、发行签名/公�
 Windows补验：初候选852037e还在-D warnings发现Unix测试专用StreamExt无条件导入，现用cfg(unix)准确限定导入；没有绕过Windows检查或改变生产行为。
 
 时序补验：macOS在高负载下暴露250ms真实Shell测试余量不足，已改为共享事件读取函数+虚拟时钟精确验证空闲重置，并保留真实进程清理测试；最终标签使用再次完整检查后的提交。
+
+## 最终源码与复部署收口
+
+最终实现提交dec15ee已修复实时Shell回归的时序依赖；同一实现已重新安装并恢复API。后续封版证据提交仅更新文档，source-manifest核对实现与已安装二进制一致，不因此重复改变运行进程。最初备份与后续备份均保留；最后复部署前任务0、一致备份`/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-v020-final-20261026-143521.db`。截至2026-10-26T14:41:40.662762+08:00，257条调用/正文/映射/Key/连接/settings保持，仅额度快照刷新，Schema13、integrity ok/FK0、API任务0，总期1200、CLI原值600。原生1200保存/1201拒绝在同一版UI上完成，最终重启再次核对配置600保留。
+
+远端CI只以最终封版标签对应提交为准；macOS、Windows、sdk-compat三项均须成功，标签注释记录最终检查链接及本机校验摘要。Security仅在PR触发，本轮push被跳过，不冒称安全审计通过。旧失败候选852037e/f22daf4保留可追溯，不作最终结论。

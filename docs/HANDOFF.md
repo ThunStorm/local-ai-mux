@@ -12,7 +12,7 @@ v0.2.0封版：CLI空闲上限30–1200秒，Gateway入站总期1200秒；默认
 
 ## 验证与部署
 
-2026-10-26：Rust142/前端12、类型/构建、全仓及harness Clippy、Python/TS SDK各25均通过；三尺寸中英浅深、未知保存/1200/1201、筛选导出与独立文件读回通过。原生0.2.0与1200保存读取已验，恢复600；health版本/总期正确、任务0。备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-v020-20261026-104852.db`；安装/release/build-info SHA256 `c991a531624b4071291e1b6cb036cf46e07b513e8acc42be5f02b4294ac2251a`一致，PID43913存活，实际x86_64。原257条调用/正文/映射、Key/权限、连接和settings保持，仅额度快照刷新，integrity ok/FK0、无迁移/真实生成。源码manifest一致。完整范围见封版记录，远端CI绑定本次推送候选，v0.2.0标签只在检查后落定。
+2026-10-26：Rust142/前端12、类型/构建、全仓及harness Clippy、Python/TS SDK各25均通过；三尺寸中英浅深、未知保存/1200/1201、筛选导出与独立文件读回通过。原生0.2.0与1200保存读取已验，恢复600；health版本/总期正确、任务0。备份 `/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-v020-20261026-104852.db`；安装/release/build-info SHA256 `bf410a01cf7ab005b48702e54f8ae30555d5e4ae05c37eda59b68cde69a63873`一致，PID99856于2026-10-26T14:41:40.662762+08:00核验存活，实际x86_64。原257条调用/正文/映射、Key/权限、连接和settings保持，仅额度快照刷新，integrity ok/FK0、无迁移/真实生成。源码manifest一致。完整范围见封版记录，远端CI绑定本次推送候选，v0.2.0标签只在检查后落定。
 
 ## 下一步
 
@@ -27,3 +27,5 @@ v0.2.0封版：CLI空闲上限30–1200秒，Gateway入站总期1200秒；默认
 Windows补验：旧候选852037e的可靠性测试模块无条件导入Unix专用StreamExt导致Clippy失败，已加cfg(unix)；生产代码未变，继续等待修复后提交的完整三项CI。
 
 时序补验：f22daf4的macOS CLI事件重置测试受真实Shell调度影响误触发250ms超时，现统一有界事件读取并用虚拟时钟/内存管道精确回归，真实owned进程测试保留。生产计时语义不变，最终仍须三项CI通过。
+
+最终实现dec15ee已复部署（clean来源），API恢复、257条历史与设置保持；后续仅封版证据文档提交，已装二进制/实现manifest一致。最后复部署备份`/Users/williamli/Library/Application Support/LocalMux/backups/localmux-pre-v020-final-20261026-143521.db`。最终CI绑定v0.2.0标签对应提交，注释标签保存检查链接与本机摘要；不创建GitHub Release。
