@@ -6,6 +6,8 @@
 
 ## 0.2.0 — 2026-10-26
 
+- 修复Unix可靠性测试专用导入在Windows上的未使用导入错误，保留-D warnings门禁。
+
 - 对齐SDK/打包工作流所需Rust组件，修复Ubuntu首次Cargo补装rustfmt的cargo-fmt冲突；固定Python SDK封版基线。
 
 - 修复限时设置返回未知时误显示旧值、初始化/重读竞态；HTTP非流响应与目录有界读取，Chat/Responses非流正文统一8MiB上限，超限返回LMX_OUTPUT_TOO_LARGE。

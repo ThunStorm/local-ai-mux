@@ -20,6 +20,10 @@
 
 首个封版候选852037e的sdk-compat job在执行SDK测试前，由Rustup补装rustfmt时发生bin/cargo-fmt文件冲突；本机全工具链环境不会复现该准备顺序。修复使SDK、桌面打包与签名候选工作流显式准备仓库rust-toolchain.toml所需的rustfmt/clippy，与verify job一致。另将测试Python SDK基线固定3.24.0，避免封版验证随最新包变化。最终远端检查只看修复后提交，旧失败保留可追溯。
 
+### BUG-04：Unix测试导入导致Windows Clippy失败
+
+候选852037e的Windows verify在cargo clippy阶段发现adapter-sdk/cli.rs可靠性测试模块无条件导入StreamExt，但使用它的进程组测试受cfg(unix)保护，Windows因此触发-D unused-imports。导入现加同样cfg(unix)，不禁用警告、不跳过Windows验证，也不改变运行时代码。该类跨平台问题不能由macOS Clippy通过推定不存在；最终结果以修复后Windows job为准。
+
 ## 其他检查与证据入口
 
 | 范围 | 本轮检查 | 结论边界 |

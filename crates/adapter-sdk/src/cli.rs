@@ -227,6 +227,7 @@ mod tests {
 #[cfg(test)]
 mod reliability_tests {
     use super::*;
+    #[cfg(unix)]
     use futures_util::StreamExt;
     #[tokio::test]
     async fn json_lines_and_catalog_output_stop_at_the_byte_limit() {
