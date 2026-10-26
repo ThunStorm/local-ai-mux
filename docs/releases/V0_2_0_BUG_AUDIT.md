@@ -16,6 +16,10 @@
 
 修复：模型目录/公开本机元数据JSON最多4MiB，非流式响应JSON最多64MiB，在Content-Length与chunk复制前检查；正文8MiB上限由HTTP Adapter和Gateway Chat/Responses两层核对。SSE缓冲同样在扩容前检查。超限统一LMX_OUTPUT_TOO_LARGE，失败不保存超大正文、不新建成功续接映射，也不根据该错误推断供应商停服。回环声明长度/无声明chunked超限、正常小JSON、HTTP非流大文本和两端点自定义Adapter大结果均有回归。
 
+### BUG-03：Ubuntu SDK工作流的工具链组件准备不完整
+
+首个封版候选852037e的sdk-compat job在执行SDK测试前，由Rustup补装rustfmt时发生bin/cargo-fmt文件冲突；本机全工具链环境不会复现该准备顺序。修复使SDK、桌面打包与签名候选工作流显式准备仓库rust-toolchain.toml所需的rustfmt/clippy，与verify job一致。另将测试Python SDK基线固定3.24.0，避免封版验证随最新包变化。最终远端检查只看修复后提交，旧失败保留可追溯。
+
 ## 其他检查与证据入口
 
 | 范围 | 本轮检查 | 结论边界 |
