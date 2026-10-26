@@ -18,4 +18,4 @@ v0.2.0：verify.sh/verify.ps1与主CI增加`node scripts/check-release.mjs`，�
 
 全部六个文件型存储测试改用独立tempdir；重开前close并drop旧池，结束时统一关闭/释放后清理。只对Windows OS32/33共享或锁冲突在5秒内异步退避重试，其他错误及超时仍使测试失败；不把remove_file错误改为忽略。新增cfg(windows)测试真实持有不允许删除的文件句柄，释放后确认清理成功。生产open/迁移/连接策略不变，不修改用户数据库；v0.2.0标签保持不动，此为分支Unreleased维护。
 
-本机storage13/13、全仓Clippy通过；Windows删除锁回归及远端完整三项检查以本次维护提交结果为准。
+本机storage13/13、全仓Clippy通过；Windows删除锁回归及远端完整三项检查以本次维护提交结果为准。Windows job在完整Clippy/测试前先运行storage回归，以便尽早暴露文件清理问题；后续完整workspace检查保留。
