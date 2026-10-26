@@ -353,10 +353,12 @@ mod tests {
     #[tokio::test]
     async fn version_ten_upgrade_preserves_legacy_sessions_and_reopen_recovers_only_unfinished_calls(
     ) {
-        let path = std::env::temp_dir().join(format!("localmux-calls-{}.db", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("localmux.db");
         let pool = crate::open(&path).await.unwrap();
         sqlx::raw_sql("DROP TABLE call_contents; DROP TABLE call_recording_settings; DROP TABLE call_records; DELETE FROM _sqlx_migrations WHERE version>=11; INSERT INTO conversations (id,model_id,adapter_id,created_at,last_active_at) VALUES ('legacy','mock/echo','mock',1,1);").execute(&pool).await.unwrap();
         pool.close().await;
+        drop(pool);
         let pool = crate::open(&path).await.unwrap();
         assert_eq!(
             crate::list_conversations(&pool).await.unwrap()[0].id,
@@ -366,6 +368,7 @@ mod tests {
         start_call(&pool, &record("done")).await.unwrap();
         finish_call(&pool, &record("done")).await.unwrap();
         pool.close().await;
+        drop(pool);
         let pool = crate::open(&path).await.unwrap();
         let records = list_calls(&pool, &CallFilter::default()).await.unwrap();
         assert_eq!(records[0].status, "completed");
@@ -375,8 +378,9 @@ mod tests {
             Some("LMX_PROCESS_INTERRUPTED")
         );
         assert_eq!(records[1].elapsed_ms, None);
-        pool.close().await;
-        std::fs::remove_file(path).unwrap();
+        crate::test_support::close_and_remove(pool, &path)
+            .await
+            .unwrap();
     }
 }
 
@@ -454,8 +458,8 @@ mod content_tests {
     use super::*;
     #[tokio::test]
     async fn toggle_and_content_survive_restart_and_cleanup_cascades_without_changing_sessions() {
-        let path =
-            std::env::temp_dir().join(format!("localmux-dialogue-{}.db", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("localmux.db");
         let pool = crate::open(&path).await.unwrap();
         assert!(!recording_setting(&pool).await.unwrap().enabled);
         let record = CallRecord {
@@ -484,6 +488,7 @@ mod content_tests {
             .await
             .unwrap());
         pool.close().await;
+        drop(pool);
         let pool = crate::open(&path).await.unwrap();
         assert!(recording_setting(&pool).await.unwrap().enabled);
         assert_eq!(
@@ -511,10 +516,12 @@ mod content_tests {
         assert!(call_content(&pool, &record.id).await.unwrap().is_none());
         set_recording(&pool, false).await.unwrap();
         pool.close().await;
+        drop(pool);
         let pool = crate::open(&path).await.unwrap();
         assert!(!recording_setting(&pool).await.unwrap().enabled);
-        pool.close().await;
-        std::fs::remove_file(path).unwrap();
+        crate::test_support::close_and_remove(pool, &path)
+            .await
+            .unwrap();
     }
 }
 
@@ -556,8 +563,8 @@ mod diagnostics_tests {
 
     #[tokio::test]
     async fn version_twelve_upgrade_keeps_old_records_unknown_and_rejects_unbounded_diagnostics() {
-        let path =
-            std::env::temp_dir().join(format!("localmux-diagnostics-{}.db", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("localmux.db");
         let pool = crate::open(&path).await.unwrap();
         let mut old = CallRecord {
             id: "legacy".into(),
@@ -571,6 +578,7 @@ mod diagnostics_tests {
         finish_call(&pool, &old).await.unwrap();
         sqlx::raw_sql("DROP INDEX call_records_request_id; ALTER TABLE call_records DROP COLUMN request_id; ALTER TABLE call_records DROP COLUMN diagnostics; DELETE FROM _sqlx_migrations WHERE version=13;").execute(&pool).await.unwrap();
         pool.close().await;
+        drop(pool);
         let pool = crate::open(&path).await.unwrap();
         let legacy = list_calls(&pool, &Default::default())
             .await
@@ -608,8 +616,9 @@ mod diagnostics_tests {
                 .unwrap(),
             "ok"
         );
-        pool.close().await;
-        std::fs::remove_file(path).unwrap();
+        crate::test_support::close_and_remove(pool, &path)
+            .await
+            .unwrap();
     }
 }
 

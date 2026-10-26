@@ -1,4 +1,6 @@
 mod calls;
+#[cfg(test)]
+mod test_support;
 pub use calls::*;
 
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
@@ -50,7 +52,8 @@ pub async fn save_setting_bool(pool: &SqlitePool, key: &str, value: bool) -> any
 mod tests {
     #[tokio::test]
     async fn initializes_schema() {
-        let path = std::env::temp_dir().join(format!("localmux-phase0-{}.db", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("localmux.db");
         let pool = super::open(&path).await.expect("database opens");
         let count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='settings'",
@@ -64,8 +67,9 @@ mod tests {
             .await
             .expect("latest migration");
         assert_eq!(version, 13);
-        pool.close().await;
-        std::fs::remove_file(&path).ok();
+        crate::test_support::close_and_remove(pool, &path)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -481,7 +485,8 @@ mod routing_storage_tests {
     use super::*;
     #[tokio::test]
     async fn persists_route_policy_and_reported_quota() {
-        let path = std::env::temp_dir().join(format!("localmux-phase6-{}.db", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("localmux.db");
         let pool = open(&path).await.unwrap();
         save_route_policy(&pool, "default", r#"{"reserve_as_free":false}"#)
             .await
@@ -509,8 +514,9 @@ mod routing_storage_tests {
             rows[0].source,
             localmux_quota::QuotaSource::ProviderReported
         );
-        pool.close().await;
-        std::fs::remove_file(path).ok();
+        crate::test_support::close_and_remove(pool, &path)
+            .await
+            .unwrap();
     }
 }
 
@@ -615,7 +621,8 @@ mod session_storage_tests {
     use super::*;
     #[tokio::test]
     async fn maps_latest_response_without_persisting_prompt() {
-        let path = std::env::temp_dir().join(format!("localmux-phase7-{}.db", std::process::id()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("localmux.db");
         let pool = open(&path).await.unwrap();
         save_response_mapping(
             &pool,
@@ -670,8 +677,9 @@ mod session_storage_tests {
                 .as_deref(),
             Some("native-id")
         );
-        pool.close().await;
-        std::fs::remove_file(path).ok();
+        crate::test_support::close_and_remove(pool, &path)
+            .await
+            .unwrap();
     }
 }
 

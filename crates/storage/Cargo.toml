@@ -12,4 +12,5 @@ localmux-security = { path = "../security" }
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros", "json"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "time"] }

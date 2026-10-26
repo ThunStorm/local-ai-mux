@@ -1,5 +1,9 @@
 # LocalAiMux 当前交接
 
+## 封版后CI维护
+
+2026-10-26：用户所报Windows17分6秒失败为dec15ee的临时DB删除OS32共享冲突；1d0f031虽通过，同实现仍有清理偶发性。已将六个文件型存储测试隔离到tempdir、重开前释放旧池、关闭后仅对Windows OS32/33限时清理重试，并新增真实删除锁Windows回归。本机storage13/13与全仓Clippy通过；等待本次维护提交远端结果。仅cfg(test)/开发依赖/文档变化，生产数据路径与API行为不变，不重启服务、不移动v0.2.0标签。详情见[CI维护](development/CI.md#封版后windows存储测试维护2026-10-26)。
+
 ## 当前工作基线
 
 v0.2.0封版：CLI空闲上限30–1200秒，Gateway入站总期1200秒；默认180秒与已保存值保留。统一LocalAiMux品牌和workspace版本，补充版本/文档门禁、TODO与运行说明。本轮修复的问题（设置未知结果误显旧值、HTTP非流式输出无界、CI组件准备冲突、Windows测试导入及实时测试不稳定）见[检查记录](releases/V0_2_0_BUG_AUDIT.md)。完整内容和验证见[封版检查](releases/V0_2_0_FREEZE.md)。
