@@ -405,13 +405,9 @@ impl AppServer {
         wait: Duration,
         layer: localmux_adapter_sdk::TimeoutLayer,
     ) -> Result<Value, AdapterError> {
-        timeout(
-            wait,
-            localmux_adapter_sdk::cli::read_json_line(&mut self.stdout),
-        )
-        .await
-        .map_err(|_| AdapterError::TimeoutAt { layer, limit: wait })??
-        .ok_or(AdapterError::ProcessFailed)
+        localmux_adapter_sdk::cli::read_json_line_with_timeout(&mut self.stdout, wait, layer)
+            .await?
+            .ok_or(AdapterError::ProcessFailed)
     }
     async fn request(
         &mut self,

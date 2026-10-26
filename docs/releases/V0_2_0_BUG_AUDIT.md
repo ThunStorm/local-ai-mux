@@ -24,6 +24,10 @@
 
 候选852037e的Windows verify在cargo clippy阶段发现adapter-sdk/cli.rs可靠性测试模块无条件导入StreamExt，但使用它的进程组测试受cfg(unix)保护，Windows因此触发-D unused-imports。导入现加同样cfg(unix)，不禁用警告、不跳过Windows验证，也不改变运行时代码。该类跨平台问题不能由macOS Clippy通过推定不存在；最终结果以修复后Windows job为准。
 
+### BUG-05：实时时序测试在CI高负载下误超时
+
+macOS候选f22daf4在CLI空闲重置测试中，Shell启动/调度与150ms实际sleep共用250ms余量，高负载时成功分支误触发超时。改为CLI与Codex共用的有界事件读取函数，以Tokio虚拟时钟和内存管道验证：每150ms完整事件重置250ms空闲，总时长300ms仍通过，随后无事件严格250ms触发正确层。该测试现在跨平台执行；真实owned进程/父子清理/异常退出仍由独立Unix测试覆盖，没有简单放宽生产限值或删除断言。
+
 ## 其他检查与证据入口
 
 | 范围 | 本轮检查 | 结论边界 |

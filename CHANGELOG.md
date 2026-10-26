@@ -6,6 +6,8 @@
 
 ## 0.2.0 — 2026-10-26
 
+- 将CLI空闲重置回归改为跨平台虚拟时钟测试，消除CI高负载Shell调度导致的误超时；复用CLI/Codex有界事件读取。
+
 - 修复Unix可靠性测试专用导入在Windows上的未使用导入错误，保留-D warnings门禁。
 
 - 对齐SDK/打包工作流所需Rust组件，修复Ubuntu首次Cargo补装rustfmt的cargo-fmt冲突；固定Python SDK封版基线。

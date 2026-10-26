@@ -33,6 +33,17 @@ pub async fn read_json_line<R: AsyncBufRead + Unpin>(
         .map(Some)
         .map_err(|_| AdapterError::ProcessFailed)
 }
+/// Shared, bounded event read. Each complete event starts a fresh idle wait.
+pub async fn read_json_line_with_timeout<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    limit: Duration,
+    layer: crate::TimeoutLayer,
+) -> Result<Option<Value>, AdapterError> {
+    timeout(limit, read_json_line(reader))
+        .await
+        .map_err(|_| AdapterError::TimeoutAt { layer, limit })?
+}
+
 async fn bounded_output<R: AsyncRead + Unpin>(reader: R) -> Result<Vec<u8>, AdapterError> {
     let mut bytes = Vec::new();
     reader
@@ -159,7 +170,7 @@ pub async fn stream_json_command(
         let mut final_text = String::new();
         let mut metadata = None;
         loop {
-            let Some(value) = timeout(idle_timeout, read_json_line(&mut reader)).await.map_err(|_| AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliIdle, limit: idle_timeout })?? else { break; };
+            let Some(value) = read_json_line_with_timeout(&mut reader, idle_timeout, crate::TimeoutLayer::CliIdle).await? else { break; };
             if let Some(id) = value["session_id"].as_str().or_else(|| value["sessionId"].as_str()) { *shared.lock().await = Some(id.to_owned()); }
             if let Some(error) = value.get("error") { Err(map_error(error))?; }
             if let Some(delta) = parse_delta(&value) { saw_delta = true; yield StreamEvent::Delta(delta); }
@@ -244,30 +255,46 @@ mod reliability_tests {
         assert!(read_json_line(&mut valid).await.unwrap().is_none());
         assert!(bounded_output(&oversized[..]).await.is_err());
     }
-    #[cfg(unix)]
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn configured_cli_idle_limit_resets_on_complete_events() {
-        let script = "cat >/dev/null; printf '%s\\n' '{\"delta\":\"first\"}'; sleep 0.15; printf '%s\\n' '{\"delta\":\"second\"}'; sleep 0.15; printf '%s\\n' '{\"type\":\"result\"}'";
-        for (ms, succeeds) in [(40, false), (250, true)] {
-            let (stream, _) = stream_json_command(
-                Command::new("/bin/sh"),
-                &["-c".into(), script.into()],
-                "fixture".into(),
-                Duration::from_millis(ms),
-                |v| v["delta"].as_str().map(str::to_owned),
-                |_| AdapterError::ProcessFailed,
+        let (mut writer, reader) = tokio::io::duplex(1024);
+        let writer = tokio::spawn(async move {
+            for n in 0..3 {
+                if n > 0 {
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                }
+                writer
+                    .write_all(format!("{{\"event\":{n}}}\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+            // Keep the pipe open so the next read must expire, rather than observe EOF.
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        });
+        let mut reader = BufReader::new(reader);
+        let started = tokio::time::Instant::now();
+        for n in 0..3 {
+            let event = read_json_line_with_timeout(
+                &mut reader,
+                Duration::from_millis(250),
+                crate::TimeoutLayer::CliIdle,
             )
             .await
+            .unwrap()
             .unwrap();
-            let result = crate::collect_events(stream).await;
-            if succeeds {
-                assert_eq!(result.unwrap().text, "firstsecond");
-            } else {
-                assert!(
-                    matches!(result, Err(AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliIdle, limit }) if limit == Duration::from_millis(ms))
-                );
-            }
+            assert_eq!(event["event"], n);
         }
+        assert_eq!(started.elapsed(), Duration::from_millis(300));
+        let result = read_json_line_with_timeout(
+            &mut reader,
+            Duration::from_millis(250),
+            crate::TimeoutLayer::CliIdle,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliIdle, limit }) if limit == Duration::from_millis(250))
+        );
+        writer.abort();
     }
     #[cfg(unix)]
     async fn stopped(pid: &str) {
