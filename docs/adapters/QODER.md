@@ -18,7 +18,7 @@ CLI 官方支持 macOS/Windows；本机已安装 Qoder CLI 1.1.64，登录后的
 
 ## Connection/auth strategy
 
-用户点击添加后执行官方 `qoder --list-models --output-format json`。CLI 使用它自己的登录状态，LocalMux 不读取 Qoder 配置或 Token；输出不是可解析目录时返回 `UNSUPPORTED`，不会造一个默认模型。
+用户点击添加后执行官方 `qoder --list-models --output-format json`。CLI 使用它自己的登录状态，LocalAiMux 不读取 Qoder 配置或 Token；输出不是可解析目录时返回 `UNSUPPORTED`，不会造一个默认模型。
 本机 1.1.64 在未登录时实际输出 `Not logged in`；现将该情况映射为 `AuthRequired`。应用内「登录 Qoder」仅由用户点击启动官方 `qoder login`，浏览器授权完成后需再点添加/刷新模型；登录命令的输出不进入日志。
 
 ## Capabilities
@@ -71,7 +71,7 @@ CLI 官方支持 macOS/Windows；本机已安装 Qoder CLI 1.1.64，登录后的
 
 ## Manual verification checklist
 
-安装官方 CLI → 用户登录 → LocalMux 点击添加 → 核对真实模型目录 → 官方 OpenAI SDK 调用非流式与流式 → 续接/取消/退出进程检查 → 额度来源核对。
+安装官方 CLI → 用户登录 → LocalAiMux 点击添加 → 核对真实模型目录 → 官方 OpenAI SDK 调用非流式与流式 → 续接/取消/退出进程检查 → 额度来源核对。
 
 ## 2026-10-06 能力协商实施
 

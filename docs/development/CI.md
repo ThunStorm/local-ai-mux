@@ -5,3 +5,6 @@
 本机 macOS 的通过结果不能替代 Windows CI 原生结果。正式发布另需系统级代码签名、公证与安装/更新实机验收。
 
 2026-10-10：官方 SDK 门禁统一使用 `bash scripts/sdk-smoke.sh`（可用 LOCALMUX_TEST_PYTHON 指向已有 SDK Python），为两个客户端分别启动独立合成服务，固定回环 NO_PROXY，拒绝生产8317端口/非合成Key；新增length/cancel/断开/400/429/503与请求关联回归。Rust/前端默认验证不安装网络依赖；本机完整验收另跑脚本、feature-enabled harness Clippy和GUI，证据见[可靠性验收](../architecture/RUNTIME_CONTRACT_VALIDATION_2026-10-10.md)。
+
+
+v0.2.0：verify.sh/verify.ps1与主CI增加`node scripts/check-release.mjs`，先核对workspace/Cargo.lock/前端/Tauri版本、稳定bundle identity、废弃品牌及Markdown本地目标。全量Rust与Clippy仍包含Unix owned进程/元数据/导出、前端类型/交互状态测试；SDK仅使用隔离合成服务。远端结果须绑定本次提交，Windows/ARM64实际安装仍独立待验，不能由某平台CI绿色推定所有原生能力通过。当前证据集中记录于[封版](../releases/V0_2_0_FREEZE.md)。

@@ -393,6 +393,8 @@ pub enum AdapterError {
     ContextLimit,
     #[error("upstream refused this request")]
     Refusal,
+    #[error("provider output exceeds the local size limit")]
+    OutputTooLarge,
     #[error("provider request failed")]
     ProcessFailed,
     #[error("provider request timed out")]

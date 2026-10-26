@@ -1,6 +1,8 @@
 # 会话模型
 
-LocalMux Conversation 与 Provider 原生 session 分开存储。`conversations` 保存本地 ID、实际模型、Adapter ID 和时间；`provider_sessions` 保存供应商 session ID 与续接能力；`responses` 把本地 `resp_` ID 映射到 Conversation；`run_events` 记录路由拒绝/不可用等不含提示词的事件。默认只保存元数据；从 2026-10-09 起，用户可显式开启正文录制，详见下文。
+v0.2.0：CLI配置快照最大1200秒，入站总期1200秒；这些仅影响新调用，已有diagnostics/正文/导出记录不回填。所有六格式可见标题统一LocalAiMux，JSON schema_version=1、字段/消息/时间过滤/长文本分段保持兼容；无Schema迁移。当前版数据复核见[封版](../releases/V0_2_0_FREEZE.md)。
+
+LocalAiMux Conversation 与 Provider 原生 session 分开存储。`conversations` 保存本地 ID、实际模型、Adapter ID 和时间；`provider_sessions` 保存供应商 session ID 与续接能力；`responses` 把本地 `resp_` ID 映射到 Conversation；`run_events` 记录路由拒绝/不可用等不含提示词的事件。默认只保存元数据；从 2026-10-09 起，用户可显式开启正文录制，详见下文。
 
 新 Responses 请求建立 Conversation；如果 Adapter 返回原生 session ID，下一轮 `previous_response_id` 会固定原模型和 Adapter，并调用 `resume`/`resume_stream`。仅允许从最新完成的 Response 接续，避免把旧分支误接到已前进的供应商会话。供应商未提供原生 session ID 时明确拒绝续接。
 
@@ -29,11 +31,11 @@ LocalMux Conversation 与 Provider 原生 session 分开存储。`conversations`
 
 关闭在一个事务中关闭开关、递增代次并将正在录制的正文标为 stopped；所有输出写入都以 enabled、原代次及 recording 状态作原子条件。关闭提交后的增量、尚未返回的非流式结果不会继续写入；重新开启只影响新调用，不续录旧调用，已保存的输入/回答保留。调用开始时未开启的不做中途补录，旧元数据记录不回填。状态为 recording / complete / partial / stopped，反映正文捕获的范围，不代替元数据结果与上游取消保证。
 
-正文中的普通邮箱、路径、换行与 Unicode 保留；LocalMux Key、常见 sk- Key、Bearer 及命名 token/password/cookie 字段脱敏，覆盖跨增量的凭据与结构化/camelCase 字段。仅正文副本脱敏，实际请求和响应不被改写。认证头、凭据服务内容、客户端 metadata、供应商错误原文不进入正文；正文始终不写日志。SQLite 正文没有静态加密，数据库备份会包含已经录下的内容；关闭开关不清除历史或备份。
+正文中的普通邮箱、路径、换行与 Unicode 保留；LocalAiMux Key、常见 sk- Key、Bearer 及命名 token/password/cookie 字段脱敏，覆盖跨增量的凭据与结构化/camelCase 字段。仅正文副本脱敏，实际请求和响应不被改写。认证头、凭据服务内容、客户端 metadata、供应商错误原文不进入正文；正文始终不写日志。SQLite 正文没有静态加密，数据库备份会包含已经录下的内容；关闭开关不清除历史或备份。
 
 详情按需读取正文，列表不带大文本；支持完整角色列表、回答、录制范围标记与刷新，长文本滚动查看而不截断。旧记录明确显示未录正文。文本按 React 纯文本显示，不能执行返回的 HTML。设置保存结果不确定时显示未知并提供重新读取，不以本机乐观状态猜测真实录制状态。
 
-“全部”指 LocalMux 在本轮接口中实际收到的可见对话文本；不扫描第三方历史，不抓取上游未返回的内部推理、工具过程或私有日志。Responses 各轮仍按原 conversation_id 关联；新调用携带的历史可被本轮录下，但不反向改写旧记录。
+“全部”指 LocalAiMux 在本轮接口中实际收到的可见对话文本；不扫描第三方历史，不抓取上游未返回的内部推理、工具过程或私有日志。Responses 各轮仍按原 conversation_id 关联；新调用携带的历史可被本轮录下，但不反向改写旧记录。
 
 ## 有界运行诊断（2026-10-10 / M3）
 

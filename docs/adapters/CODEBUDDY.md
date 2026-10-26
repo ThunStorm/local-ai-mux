@@ -18,7 +18,7 @@ CLI 文档覆盖 macOS/Windows；2026-10-06 本机已安装独立 CodeBuddy Code
 
 ## Connection/auth strategy
 
-用户点击添加后，在隔离临时目录运行官方 `codebuddy config get model`，有明确模型 ID 时优先采用；未设置覆盖值（空输出/null）时，从公开 `codebuddy --help` 的 `--model <model>` 区段解析 `Currently supported: (...)` 中的 ID。无法明确解析则拒绝，不写死型号或代用户设置全局模型。CLI 使用自己的登录态，LocalMux 不读取 `~/.codebuddy/models.json`，因为它可能含明文 API Key。目录验证不代表账户登录/型号可用性已经通过。
+用户点击添加后，在隔离临时目录运行官方 `codebuddy config get model`，有明确模型 ID 时优先采用；未设置覆盖值（空输出/null）时，从公开 `codebuddy --help` 的 `--model <model>` 区段解析 `Currently supported: (...)` 中的 ID。无法明确解析则拒绝，不写死型号或代用户设置全局模型。CLI 使用自己的登录态，LocalAiMux 不读取 `~/.codebuddy/models.json`，因为它可能含明文 API Key。目录验证不代表账户登录/型号可用性已经通过。
 本机 WorkBuddy 包内脚本实际需 Node ≥18.20.8，且缺少完整 CLI 运行文件；仅通过私有环境开关调用精简 bundle 不符合稳定公开接口要求。独立官方 CLI 运行时优先选择已安装的兼容 NVM Node，`config get model` 返回空值表示没有模型覆盖，并不等于 CLI 没有可用模型。应用内的桌面登录按钮只打开对应官方应用，不保证其账号与独立 CLI 共用。
 
 ## Capabilities
@@ -71,7 +71,7 @@ CLI 文档覆盖 macOS/Windows；2026-10-06 本机已安装独立 CodeBuddy Code
 
 ## Manual verification checklist
 
-安装官方 CLI → 用户登录 → LocalMux 点击添加 → 核对已选模型与账号 → 官方 OpenAI SDK 非流式/流式调用 → 会话续接与取消 → 验证无凭据泄漏。
+安装官方 CLI → 用户登录 → LocalAiMux 点击添加 → 核对已选模型与账号 → 官方 OpenAI SDK 非流式/流式调用 → 会话续接与取消 → 验证无凭据泄漏。
 
 ## 2026-10-06 能力协商实施
 

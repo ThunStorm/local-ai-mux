@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+后续改动在此记录。
+
+## 0.2.0 — 2026-10-26
+
+- 修复限时设置返回未知时误显示旧值、初始化/重读竞态；HTTP非流响应与目录有界读取，Chat/Responses非流正文统一8MiB上限，超限返回LMX_OUTPUT_TOO_LARGE。
+- 产品使用说明改为中文单一来源，补充隐性问题审查和验收边界。
+
+- 将CLI空闲配置扩大至30–1200秒，保留180秒默认与既有配置；Gateway入站总期同步1200秒，health附LocalAiMux服务名/版本，具体超时层继续记录。
+- 产品名称统一LocalAiMux，Cargo workspace、前端与Tauri版本统一0.2.0；保留既有数据目录、bundle identifier与协议身份。
+- 收敛重复限值和版本元数据，加入封版版本/品牌/文档链接检查，更新根说明/支持矩阵/API/构建/安全，归档历史交接并集中TODO。
+- 下列条目一并纳入本次封版；其中提到的旧计时值与界面尺寸是各次变更当时的演进，当前参数以v0.2.0契约为准。
+
 - 压缩会话筛选与导出工具区，默认窗口首屏可见记录；完整说明按需展开。
 
 - 会话记录新增开始时间段与已录正文筛选；全部匹配结果可通过原生保存窗口导出JSON/Markdown/XLSX/CSV/TXT/HTML，保留录制状态与未知值，长正文分段、文件原子保存。
@@ -83,7 +95,7 @@
 - Parse the real Qoder CLI `MODEL` table after login; show Qoder and Qoder CN separately, and split WorkBuddy from CodeBuddy CN and standalone CodeBuddy Code CLI without reassigning a login or model catalog.
 - List reported model IDs in each application's diagnostics, while keeping the API selector limited to models authorized for the current Key.
 - Migrate existing desktop inventory identities in `0010` while preserving connection records; stop treating WorkBuddy's incomplete internal script or CodeBuddy CN's editor launcher as a model CLI.
-- Rename the visible desktop app and installed bundle to LocalAiMux while continuing to use the existing LocalMux data directory.
+- Rename the visible desktop app and installed bundle to LocalAiMux while continuing to use the existing LocalAiMux data directory.
 - Add user-triggered official sign-in entry points for Codex/Qoder and desktop login entry points for WorkBuddy/MiMo; keep errors on the page where they occurred.
 - Map unauthenticated Qoder catalog requests to login guidance; identify WorkBuddy's incomplete bundled CLI instead of offering a connection that cannot use the documented commands.
 - Detect the installed MiMo Code CLI separately from its desktop app; add saved-connection model refresh and a direct read-only Agent Key authorization action.

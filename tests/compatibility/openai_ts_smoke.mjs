@@ -49,7 +49,7 @@ const base = process.env.LOCALMUX_TEST_BASE_URL.replace(/\/v1$/,'');
 const health = async () => (await fetch(base + '/api/health')).json();
 const catalog = await (await fetch(base + '/api/chat/models',{headers:{Authorization:`Bearer ${process.env.LOCALMUX_TEST_API_KEY}`}})).json();
 assert.equal(catalog.schema_version,2);
-assert.equal((await health()).execution_limits.request_timeout_seconds,600);
+assert.equal((await health()).execution_limits.request_timeout_seconds,1200);
 const {data:correlated,response:raw} = await strict.chat.completions.create({model:'mock/echo',messages:[{role:'user',content:'correlation'}],store:false}).withResponse();
 assert.equal(raw.headers.get('x-request-id'),correlated.localmux.request_id);
 for(const [model,finish,reason] of [['fixture/length','length','max_output_tokens'],['fixture/cancel',null,'cancelled']]){

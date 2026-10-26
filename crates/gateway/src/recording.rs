@@ -499,7 +499,7 @@ impl Drop for CallGuard {
             let pool = self.pool.clone();
             runtime.spawn(async move {
                 if localmux_storage::finish_call(&pool, &record).await.is_err() {
-                    eprintln!("LocalMux call record persistence failed");
+                    eprintln!("LocalAiMux call record persistence failed");
                 }
             });
         }

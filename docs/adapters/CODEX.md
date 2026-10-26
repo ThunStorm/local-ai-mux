@@ -2,7 +2,7 @@
 
 ## Purpose
 
-把用户显式添加的 Codex CLI 作为 Agent Runtime，通过官方 [Codex App Server](https://learn.chatgpt.com/docs/app-server) 的 stdio 协议接入。它使用 Codex 自己维护的登录状态；LocalMux 不读取或复制 ChatGPT Token。
+把用户显式添加的 Codex CLI 作为 Agent Runtime，通过官方 [Codex App Server](https://learn.chatgpt.com/docs/app-server) 的 stdio 协议接入。它使用 Codex 自己维护的登录状态；LocalAiMux 不读取或复制 ChatGPT Token。
 
 ## Supported OS
 
@@ -76,7 +76,7 @@ macOS 与 Windows 的可执行文件路径均可检测；本机仅在 macOS 上�
 
 1. 在桌面发现页确认 Codex CLI 路径和「版本未验证」提示。
 2. 用户点击「添加」，检查官方登录状态及模型目录；未登录时不保存连接。
-3. 创建 LocalMux Key、启动 API，通过官方 OpenAI SDK 调用 `codex/<真实返回模型>` 的非流式和流式接口。
+3. 创建 LocalAiMux Key、启动 API，通过官方 OpenAI SDK 调用 `codex/<真实返回模型>` 的非流式和流式接口。
 4. 检查续接、取消、退出后进程清理，以及 SQLite/日志不含明文凭据。
 
 ## 2026-10-06 故障修复验收

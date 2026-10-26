@@ -1,5 +1,24 @@
 # 流式响应
 
+## v0.2.0 当前计时契约（2026-10-26）
+
+Gateway总期限从入站起1200秒，覆盖鉴权/路由、排队、启动、执行、终态和SSE背压；15秒传输心跳不延长总期。CLI/Agent typed事件空闲可在桌面API页配置30–1200秒，默认180、现有已保存值保留；每次入站取快照，新保存仅影响新请求，启动恢复。CLI等待完整输出事件；Gateway等待typed事件，内部非文字通知可能不成为typed事件。
+
+| 层 | 当前限值 |
+|---|---|
+| gateway_overall | 1200秒总期 |
+| cli_idle / gateway_stream_idle（Agent） | 当前保存的30–1200秒 |
+| gateway_stream_idle（HTTP Provider） | 180秒 |
+| gateway_startup | 30秒，受剩余总预算约束 |
+| cli_rpc | Codex控制响应每次读取15秒 |
+| cli_command / cli_exit | 命令各自固定限值 / EOF后退出5秒 |
+| Agent队列/间隔 | 30秒队列（429）/5秒启动间隔/每连接串行 |
+| HTTP Adapter / 桌面试对话客户端 | 各自120秒总限时，独立于CLI设置 |
+
+不能把配置为1200秒解释为任意客户端都保证等待满20分钟；先触发的真实层决定结果。LMX_PROCESS_TIMEOUT的固定timeout_layer/timeout_limit_ms与diagnostics保持同源；未提供层的兼容错误保留unknown。只保证本机接收/owned进程清理，远端执行/计费未知。
+
+以下按日期保留演进记录；600秒总期与旧范围是历史参数，被本节覆盖。
+
 Chat 使用 `text/event-stream`，发送角色、文本增量、已报告 finish_reason（未知为 null）和 `data: [DONE]`。Mock 返回单个文本块；Codex Adapter 的 `item/agentMessage/delta` 会逐块映射为 SSE。首块与后续块有超时限制，客户端断开时流被丢弃，所拥有的子进程会终止。官方 Python/TypeScript SDK 已对 Mock 路径消费成功；Codex 真实订阅流仍待显式连接后验收。
 
 2026-10-04 桌面试对话通过 Rust HTTP client 请求固定 loopback Gateway，使用 Tauri Channel 传 started/delta/completed/failed/stopped；每条事件含窗口所属请求 ID、递增序号、固定模型和本机耗时。前端忽略旧请求/重复/不同模型事件。SSE 解码处理 UTF-8 分片、CRLF 和多行 data；收到 `[DONE]` 且有有效文字才完成，异常 EOF 或上游 error 不把部分回答判完成。

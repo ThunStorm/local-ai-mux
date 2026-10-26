@@ -2684,7 +2684,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "localmux-adapter-ark"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "localmux-adapter-sdk",
  "secrecy",
@@ -2692,7 +2692,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-adapter-codebuddy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -2705,7 +2705,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-adapter-codex"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2720,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-adapter-glm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "localmux-adapter-sdk",
  "secrecy",
@@ -2728,7 +2728,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-adapter-kimi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "localmux-adapter-sdk",
@@ -2738,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-adapter-qoder"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -2750,7 +2750,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-adapter-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2770,7 +2770,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-api-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2778,14 +2778,14 @@ dependencies = [
 
 [[package]]
 name = "localmux-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
 ]
 
 [[package]]
 name = "localmux-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -2827,7 +2827,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-discovery"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "plist",
  "serde",
@@ -2837,14 +2837,14 @@ dependencies = [
 
 [[package]]
 name = "localmux-domain"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "localmux-gateway"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2873,14 +2873,14 @@ dependencies = [
 
 [[package]]
 name = "localmux-quota"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "localmux-router"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "localmux-domain",
  "serde",
@@ -2889,7 +2889,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-secrets"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "keyring",
  "tempfile",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-security"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "localmux-domain",
  "serde",
@@ -2906,7 +2906,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "localmux-quota",
@@ -2919,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "localmux-telemetry"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "regex",
  "tracing-subscriber",

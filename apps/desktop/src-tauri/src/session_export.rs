@@ -197,11 +197,14 @@ fn render(
 fn text_document(v: &Value, format: ExportFormat) -> String {
     let html = matches!(format, ExportFormat::Html);
     let md = matches!(format, ExportFormat::Md);
-    let intro=format!("LocalMux 会话导出 / Session export\n导出时间 exported_at_utc: {}\n筛选 Filter: {}\n{}\n{}\n",v["exported_at_utc"],v["filter"],v["time_basis"].as_str().unwrap(),v["notes"]);
+    let intro = format!(
+        "LocalAiMux 会话导出 / Session export\n导出时间 exported_at_utc: {}\n筛选 Filter: {}\n{}\n{}\n",
+        v["exported_at_utc"], v["filter"], v["time_basis"].as_str().unwrap(), v["notes"],
+    );
     let mut s = if html {
-        format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\"><title>LocalMux 会话导出</title><style>body{{font:15px/1.6 system-ui;margin:32px auto;padding:0 20px;max-width:1000px;color:#18202d}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f7;padding:16px}}article{{border-top:1px solid #ccc;margin:28px 0}}h2{{overflow-wrap:anywhere}}</style><h1>LocalMux 会话导出</h1><pre>{}</pre>",escaped(&intro))
+        format!("<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\"><title>LocalAiMux 会话导出</title><style>body{{font:15px/1.6 system-ui;margin:32px auto;padding:0 20px;max-width:1000px;color:#18202d}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f5f7;padding:16px}}article{{border-top:1px solid #ccc;margin:28px 0}}h2{{overflow-wrap:anywhere}}</style><h1>LocalAiMux 会话导出</h1><pre>{}</pre>",escaped(&intro))
     } else if md {
-        format!("# LocalMux 会话导出\n\n{}\n", fenced(&intro))
+        format!("# LocalAiMux 会话导出\n\n{}\n", fenced(&intro))
     } else {
         intro
     };
@@ -423,7 +426,19 @@ fn xlsx(v: &Value) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
     info.set_name("About 导出说明")?;
     info.set_column_width(0, 30)?;
     info.set_column_width(1, 100)?;
-    for (row,(k,value)) in [("schema_version",cell(&v["schema_version"])),("exported_at_utc",cell(&v["exported_at_utc"])),("filter_json",cell(&v["filter"])),("time_basis",cell(&v["time_basis"])),("notes",cell(&v["notes"])),("content_parts","Concatenate text in part order for each call_id/message_index. Text cells are literal strings; blanks mean unknown. Body includes record_json with full diagnostics.".into())].iter().enumerate(){info.write_string_with_format(row as u32,0,*k,&header)?;info.write_string_with_format(row as u32,1,value,&wrap)?;info.set_row_height(row as u32,48)?;}
+    let info_rows = [
+        ("schema_version", cell(&v["schema_version"])),
+        ("exported_at_utc", cell(&v["exported_at_utc"])),
+        ("filter_json", cell(&v["filter"])),
+        ("time_basis", cell(&v["time_basis"])),
+        ("notes", cell(&v["notes"])),
+        ("content_parts", "Concatenate text in part order for each call_id/message_index. Text cells are literal strings; blanks mean unknown. Body includes record_json with full diagnostics.".into()),
+    ];
+    for (row, (key, value)) in info_rows.iter().enumerate() {
+        info.write_string_with_format(row as u32, 0, *key, &header)?;
+        info.write_string_with_format(row as u32, 1, value, &wrap)?;
+        info.set_row_height(row as u32, 48)?;
+    }
     book.save_to_buffer()
 }
 

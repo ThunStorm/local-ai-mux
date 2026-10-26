@@ -54,7 +54,7 @@ SSE 仅提取 `choices[0].delta.content`，要求 `[DONE]` 完整结束；兼容
 
 ## Security boundary
 
-默认只允许 HTTPS（测试用 loopback HTTP），禁用 HTTP 重定向，Key 不进 SQLite/日志。官方 GLM Coding Plan 对可使用工具有限定，LocalMux 适用性仍须人工确认；当前组件不注册进生产 Gateway。
+默认只允许 HTTPS（测试用 loopback HTTP），禁用 HTTP 重定向，Key 不进 SQLite/日志。官方 GLM Coding Plan 对可使用工具有限定，LocalAiMux 适用性仍须人工确认；当前组件不注册进生产 Gateway。
 
 ## Known limitations
 
@@ -70,4 +70,4 @@ SSE 仅提取 `choices[0].delta.content`，要求 `[DONE]` 完整结束；兼容
 
 ## Manual verification checklist
 
-人工确认 LocalMux 属于套餐允许的接入方式 → 用户显式输入 Key → Keychain 存储 → 专用地址模型目录 → 小额请求与账单核对 → SSE/错误/撤销。
+人工确认 LocalAiMux 属于套餐允许的接入方式 → 用户显式输入 Key → Keychain 存储 → 专用地址模型目录 → 小额请求与账单核对 → SSE/错误/撤销。

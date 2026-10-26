@@ -45,7 +45,7 @@ def health():
         return json.load(response)
 with urllib.request.urlopen(urllib.request.Request(base + "/api/chat/models", headers={"Authorization": "Bearer " + os.environ["LOCALMUX_TEST_API_KEY"]})) as response:
     assert json.load(response)["schema_version"] == 2
-assert health()["execution_limits"]["request_timeout_seconds"] == 600
+assert health()["execution_limits"]["request_timeout_seconds"] == 1200
 raw = client.chat.completions.with_raw_response.create(model="mock/echo", messages=[{"role":"user","content":"correlation"}], store=False)
 assert raw.headers["x-request-id"] == raw.parse().localmux["request_id"]
 for model, finish, reason in [("fixture/length", "length", "max_output_tokens"), ("fixture/cancel", None, "cancelled")]:

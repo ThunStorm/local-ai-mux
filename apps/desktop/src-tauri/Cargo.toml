@@ -1,8 +1,8 @@
 [package]
 name = "localmux-desktop"
-version = "0.1.0"
-description = "LocalMux desktop shell"
-authors = ["LocalMux contributors"]
+version.workspace = true
+description = "LocalAiMux desktop shell"
+authors = ["LocalAiMux contributors"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

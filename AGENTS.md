@@ -1,6 +1,6 @@
-# LocalMux / 智汇枢 — Agent 导航
+# LocalAiMux — Agent 导航
 
-当前分支已实现原计划 Phase 1–8 的离线代码；下一阶段按 `docs/LOCALMUX_PRODUCT_ALIGNMENT_PLAN_2026-09-28.md` 增量对齐，实际进度看 `docs/HANDOFF.md`。按需读取文档；不要全库扫描 Markdown。真实 Provider 仅使用稳定公开接口，连接须用户显式发起。
+当前分支已实现原计划 Phase 1–8 的离线代码；下一阶段按 `docs/LOCALMUX_PRODUCT_ALIGNMENT_PLAN_2026-09-28.md` 增量对齐，实际进度看 `docs/HANDOFF.md`；当前封版与后续工作见 `docs/releases/V0_2_0_FREEZE.md` / `docs/TODO.md`。按需读取文档；不要全库扫描 Markdown。真实 Provider 仅使用稳定公开接口，连接须用户显式发起。
 
 ## 运行
 
@@ -35,7 +35,7 @@
 
 1. 先读 `docs/HANDOFF.md`，按上表只读本次任务对应文档；涉及范围或阶段时才读 `docs/BRIEF.md` / `docs/LOCALMUX_PROJECT_PLAN.md`，追溯决策时才读 `docs/DECISIONS.md` 相关条目。动手前用一句话明确验收条件。
 2. 只改相关代码与说明；行为或契约变化同步对应文档和 `CHANGELOG.md` 的 Unreleased，实际进度或阻塞变化同步 `docs/HANDOFF.md`。不为纯格式改动扩写文档。
-3. 跑上表对应测试；每次改动后在 macOS 执行 `bash scripts/deploy-local-macos.sh`，从当前工作树编译、安装到 `~/Applications/LocalMux.app`、退出旧版并重启，确认进程仍在。Windows 需完成等价本机安装和重启；无法执行时记录未验证项。应用仍有任务运行时先等其结束，不能强制重启。
+3. 跑上表对应测试；每次改动后在 macOS 执行 `bash scripts/deploy-local-macos.sh`，从当前工作树编译、安装到 `~/Applications/LocalAiMux.app`、退出旧版并重启，确认进程仍在。Windows 需完成等价本机安装和重启；无法执行时记录未验证项。应用仍有任务运行时先等其结束，不能强制重启。
 4. 验收通过后按需提交、推送：用户要求交付远程或需要共享里程碑时提交并推送；否则保留本地改动并在交接中说明。推送前检查 diff、状态与目标分支，不自动发布 Release。
 
 不要把进度写进本文件；更新 `docs/HANDOFF.md`。不要创建平行项目结构或用 GUI 自动化接入 Provider。

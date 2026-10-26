@@ -47,7 +47,16 @@ impl Adapter for DiagnosticAdapter {
     }
     async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
         self.0.fetch_add(1, Ordering::SeqCst);
-        let seconds = if request.prompt == "never" { 601 } else { 130 };
+        if request.prompt == "extended" {
+            assert_eq!(request.cli_idle_timeout, Duration::from_secs(1200));
+        }
+        let seconds = if request.prompt == "never" {
+            localmux_gateway::REQUEST_TIMEOUT.as_secs() + 1
+        } else if request.prompt == "extended" {
+            901
+        } else {
+            130
+        };
         tokio::time::sleep(Duration::from_secs(seconds)).await;
         Ok(NormalizedResponse {
             text: "delayed answer".into(),
@@ -60,12 +69,15 @@ impl Adapter for DiagnosticAdapter {
         request: NormalizedRequest,
     ) -> Result<NormalizedStream, AdapterError> {
         self.0.fetch_add(1, Ordering::SeqCst);
+        if request.prompt == "extended" {
+            assert_eq!(request.cli_idle_timeout, Duration::from_secs(1200));
+        }
         Ok(Box::pin(async_stream::try_stream! {
             if request.prompt == "fail" { Err(AdapterError::ProviderUnavailable)?; }
             if request.prompt == "trickle" {
                 loop { tokio::time::sleep(Duration::from_secs(100)).await; yield "partial".to_owned(); }
             }
-            let seconds = if request.prompt == "never" { 181 } else { 35 };
+            let seconds = if request.prompt == "never" { 181 } else if request.prompt == "extended" { 901 } else { 35 };
             tokio::time::sleep(Duration::from_secs(seconds)).await;
             yield "delayed answer".to_owned();
         }))
@@ -284,7 +296,7 @@ async fn both_streams_stop_at_total_deadline_even_with_regular_deltas() {
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(body.contains("partial") && body.contains("LMX_PROCESS_TIMEOUT"));
         assert!(!body.contains("response.completed"));
-        assert!(started.elapsed() < Duration::from_secs(620));
+        assert!(started.elapsed() < localmux_gateway::REQUEST_TIMEOUT + Duration::from_secs(20));
         assert_eq!(state.active_tasks(), 0);
         tokio::time::resume();
     }
@@ -448,5 +460,67 @@ async fn agent_stream_uses_admission_snapshot_and_can_wait_beyond_old_idle_limit
         assert!(text.contains("delayed answer"), "{text}");
         assert!(!text.contains("LMX_PROCESS_TIMEOUT"), "{text}");
         tokio::time::resume();
+    }
+}
+
+#[tokio::test]
+async fn configured_twenty_minute_budget_allows_fifteen_minute_agent_results() {
+    for path in ["/v1/chat/completions", "/v1/responses"] {
+        for stream in [false, true] {
+            let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+            state.set_cli_idle_timeout_seconds(1200).await.unwrap();
+            let calls = Arc::new(AtomicUsize::new(0));
+            state
+                .register(Arc::new(DiagnosticAdapter(
+                    calls.clone(),
+                    AdapterKind::Agent,
+                    Arc::new(AtomicUsize::new(0)),
+                )))
+                .await;
+            let (_, key) = state
+                .create_key_with_policy(
+                    &["chat:invoke", "responses:invoke", "agent:invoke"],
+                    localmux_security::KeyRestrictions {
+                        execution_profile: localmux_security::ExecutionProfile::ReadOnlyAgent,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            let body = if path.ends_with("responses") {
+                serde_json::json!({"model":"diagnostic/luna","input":"extended","stream":stream})
+            } else {
+                serde_json::json!({"model":"diagnostic/luna","messages":[{"role":"user","content":"extended"}],"stream":stream})
+            };
+            let app = router(state.clone());
+            let response = if stream {
+                let response = app.oneshot(post(&key, path, body)).await.unwrap();
+                state.set_cli_idle_timeout_seconds(30).await.unwrap();
+                tokio::time::pause();
+                response
+            } else {
+                tokio::time::pause();
+                let pending = tokio::spawn(app.oneshot(post(&key, path, body)));
+                while calls.load(Ordering::SeqCst) == 0 && !pending.is_finished() {
+                    tokio::task::yield_now().await;
+                }
+                pending.await.unwrap().unwrap()
+            };
+            assert_eq!(response.status(), StatusCode::OK);
+            let text = String::from_utf8(
+                response
+                    .into_body()
+                    .collect()
+                    .await
+                    .unwrap()
+                    .to_bytes()
+                    .to_vec(),
+            )
+            .unwrap();
+            assert!(text.contains("delayed answer"), "{text}");
+            assert!(!text.contains("LMX_PROCESS_TIMEOUT"), "{text}");
+            tokio::time::resume();
+            assert_eq!(state.active_tasks(), 0);
+        }
     }
 }

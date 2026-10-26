@@ -771,7 +771,7 @@ async fn cli_idle_timeout_set(
         .state
         .set_cli_idle_timeout_seconds(seconds)
         .await
-        .map_err(|_| "保存失败：CLI 空闲限时须为 30–600 秒整数".to_string())?;
+        .map_err(|_| "保存失败：CLI 空闲限时须为 30–1200 秒整数".to_string())?;
     Ok(control.state.cli_idle_timeout_seconds())
 }
 #[tauri::command]

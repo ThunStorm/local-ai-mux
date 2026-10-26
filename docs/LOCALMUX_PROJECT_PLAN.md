@@ -1,7 +1,7 @@
-# LocalMux / 智汇枢 — 跨平台桌面 Agent 订阅统一 API 网关实施计划
+# LocalAiMux — 跨平台桌面 Agent 订阅统一 API 网关实施计划
 
 > 文档类型：`PROJECT_PLAN.md` / Agent 可直接执行实施计划
-> 当前状态：从零开始（Greenfield）
+> 当前性质：初始规划历史；当前已实现能力与验收以v0.2.0封版文档/HANDOFF为准。
 > 目标平台：macOS + Windows
 > 产品形态：原生安装桌面应用（GUI + 托盘/菜单栏 + 内嵌本地 API 服务），**不是命令行产品，也不是浏览器 Web 管理页**
 > 默认网络边界：仅监听 `127.0.0.1`
@@ -37,54 +37,13 @@
 
 # 1. 产品命名
 
-## 1.1 推荐工作名
+当前唯一产品名为 **LocalAiMux**。内部技术标识保持兼容：Cargo crate / pnpm scope采用localmux、bundle identifier为app.localmux.desktop、API扩展为localmux、Key前缀lmx_、默认端口8317。既有macOS `~/Library/Application Support/LocalMux/` 与旧安装包迁移入口保留；不能因展示名称统一而移动用户数据库或重建Key。
 
-### 英文：`LocalMux`
-### 中文：`智汇枢`
-
-含义：
-
-- `Local`：本地优先、运行于用户自己的 Windows/macOS 设备；
-- `Mux`：Multiplexer，多路复用器，将多个 Agent、订阅和模型统一汇入一套接口；
-- `智汇枢`：强调“AI 能力汇聚 + 路由枢纽”，不把产品限制在单一模型或单一 Agent。
-
-当前实施阶段使用以下可替换标识：
-
-```text
-Product Name: LocalMux
-Chinese Name: 智汇枢
-Internal Slug: localmux
-Default API Prefix: lmx_
-Default Port: 8317
-```
-
-**重要：品牌名必须可替换。** Bundle ID、Cargo package、前端显示名、安装包名、数据库目录必须通过集中配置定义，不得散落硬编码。
-
-建议默认：
-
-```text
-macOS Bundle ID: app.localmux.desktop
-Windows App ID: LocalMux.Desktop
-Data directory:
-  macOS: ~/Library/Application Support/LocalMux/
-  Windows: %APPDATA%\LocalMux\
-```
-
-正式发布前必须做商标、域名、GitHub organization、应用商店名称的独立核验；当前命名仅作为工程工作名。
-
-## 1.2 备选名称
-
-1. `LocalMux / 智汇枢` — 最推荐，技术含义明确，适合本地桌面网关。
-2. `AgentSwitch / 智汇交换台` — 更强调路由，但英文通用度较高。
-3. `AgentPatch / 智接台` — 有“Patch Bay/接线台”隐喻，但容易被理解为代码补丁工具。
-4. `ModelHub Local / 模型汇` — 容易理解，但产品实际还包含 Agent/Session，不够完整。
-5. `AI Switchboard / 智能交换台` — 产品定位准确，但品牌感较弱。
-
----
+版本与本轮封版以[当前基线](releases/V0_2_0_FREEZE.md)为准。本文件以下正文是原始分阶段规划，未由当前版本承诺一次性实现；未完成工作统一进入[TODO](TODO.md)。
 
 # 2. 产品愿景
 
-LocalMux 是一个 Windows/macOS 跨平台桌面应用，用于：
+LocalAiMux 是一个 Windows/macOS 跨平台桌面应用，用于：
 
 > 自动发现本机已安装的 AI Coding Agent / AI Agent 与可复用的订阅能力，在用户显式授权后，将这些能力标准化为统一的本地 Runtime，并通过一个 OpenAI-compatible Base URL + 本地 API Key 对外提供服务。
 
@@ -186,7 +145,7 @@ V0.1 成功必须同时满足：
 - 诊断中心；
 - 桌面设置、托盘、自启动。
 
-不可照搬：产品目标不同，LocalMux 的核心是“订阅能力 → API Runtime”。
+不可照搬：产品目标不同，LocalAiMux 的核心是“订阅能力 → API Runtime”。
 
 ## 5.2 AgentMux
 
@@ -241,7 +200,7 @@ V0.1 成功必须同时满足：
 - Qoder: https://github.com/lininn/qorder-proxy
 - Codex: https://github.com/anxkhn/codex-openai-proxy
 
-这些项目用于研究协议转换、错误映射、模型发现、额度信息，但 LocalMux 不直接把多个 proxy 进程堆在一起作为最终架构。
+这些项目用于研究协议转换、错误映射、模型发现、额度信息，但 LocalAiMux 不直接把多个 proxy 进程堆在一起作为最终架构。
 
 ---
 
@@ -310,15 +269,15 @@ Anthropic Subscription
 
 ## 6.6 Connection
 
-LocalMux 对某一个 Application/Provider/Account 的已授权接入配置。
+LocalAiMux 对某一个 Application/Provider/Account 的已授权接入配置。
 
 ## 6.7 Route
 
-从 LocalMux 模型 ID 到实际 Connection + Model 的路由关系。
+从 LocalAiMux 模型 ID 到实际 Connection + Model 的路由关系。
 
 ## 6.8 Session
 
-LocalMux Conversation 与第三方 Agent 原生 session 的映射。
+LocalAiMux Conversation 与第三方 Agent 原生 session 的映射。
 
 ---
 
@@ -326,7 +285,7 @@ LocalMux Conversation 与第三方 Agent 原生 session 的映射。
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│                    LocalMux Desktop                        │
+│                    LocalAiMux Desktop                        │
 │  Tauri 2 Window / Tray / Notifications / Auto Start       │
 ├────────────────────────────────────────────────────────────┤
 │                    React Desktop UI                        │
@@ -830,7 +789,7 @@ Kilo Code
 Continue
 ```
 
-这类产品很多时候更适合作为 LocalMux API 的消费者，而非上游 Provider。
+这类产品很多时候更适合作为 LocalAiMux API 的消费者，而非上游 Provider。
 
 ---
 
@@ -965,7 +924,7 @@ quota multiplier
 
 ## 15.5 `best`
 
-由用户显式定义优先级或 Model Policy，不允许 LocalMux 自行宣称哪个政治/主观意义上的“最佳”；技术层只根据用户配置的 capability/priority 选择。
+由用户显式定义优先级或 Model Policy，不允许 LocalAiMux 自行宣称哪个政治/主观意义上的“最佳”；技术层只根据用户配置的 capability/priority 选择。
 
 ## 15.6 Sticky Session
 
@@ -986,7 +945,7 @@ quota multiplier
 
 ```text
 Layer 1: Client message history
-Layer 2: LocalMux Conversation / Response mapping
+Layer 2: LocalAiMux Conversation / Response mapping
 Layer 3: Provider-native Session
 ```
 
@@ -1009,12 +968,12 @@ provider_sessions
 
 ## 16.3 OpenAI Chat Completions
 
-标准客户端通常会重新发送完整 `messages`。LocalMux 必须正常工作，不要求私有 session header。
+标准客户端通常会重新发送完整 `messages`。LocalAiMux 必须正常工作，不要求私有 session header。
 
 可选扩展：
 
 ```text
-X-LocalMux-Conversation-Id
+X-LocalAiMux-Conversation-Id
 ```
 
 若客户端传入，则启用 provider session affinity。
@@ -1028,7 +987,7 @@ response_id
 previous_response_id
 ```
 
-在 SQLite 中保存 LocalMux response → provider session 映射。
+在 SQLite 中保存 LocalAiMux response → provider session 映射。
 
 ## 16.5 长期 Memory
 
@@ -1179,7 +1138,7 @@ OpenAI-compatible API Key → INFERENCE_ONLY / READ_ONLY_AGENT
 如果 Provider 不支持权限约束，则 GUI 必须清楚提示：
 
 ```text
-“This runtime controls its own permissions; LocalMux cannot enforce per-tool restrictions.”
+“This runtime controls its own permissions; LocalAiMux cannot enforce per-tool restrictions.”
 ```
 
 不得假装具备无法保证的沙箱能力。
@@ -1236,7 +1195,7 @@ email（可配置）
 
 # 21. Process Manager
 
-很多 Agent 需要 LocalMux 管理子进程。
+很多 Agent 需要 LocalAiMux 管理子进程。
 
 统一：
 
@@ -1280,7 +1239,7 @@ ManagedProcess
 → 显示发现的软件
 → 选择添加
 → 验证连接
-→ 创建 LocalMux API Key
+→ 创建 LocalAiMux API Key
 → 显示 Base URL + 测试
 ```
 
@@ -1381,7 +1340,7 @@ best
 
 ```text
 Official quota（Provider 上报）
-Local request/token statistics（LocalMux 统计）
+Local request/token statistics（LocalAiMux 统计）
 ```
 
 两者绝不能混为一列。
@@ -1442,7 +1401,7 @@ audit_logs
 
 ## 24.1 usage_records
 
-LocalMux 自己统计：
+LocalAiMux 自己统计：
 
 ```text
 request_id
@@ -1553,7 +1512,7 @@ UNSUPPORTED
 - process lifecycle；
 - normalized errors。
 
-禁止将 ChatGPT 登录 token 复制到 LocalMux 自己的数据文件。
+禁止将 ChatGPT 登录 token 复制到 LocalAiMux 自己的数据文件。
 
 ## Phase B — Qoder
 
@@ -1655,7 +1614,7 @@ Live test 默认不在公共 CI 执行。
 - metadata；
 - error normalization。
 
-建立一个“小型 OpenAI SDK consumer test”，分别用官方 Python/TS OpenAI SDK 指向 LocalMux，验证无需修改 SDK。
+建立一个“小型 OpenAI SDK consumer test”，分别用官方 Python/TS OpenAI SDK 指向 LocalAiMux，验证无需修改 SDK。
 
 ---
 
@@ -1734,7 +1693,7 @@ Windows 10/11 x64
 
 ```text
 Gateway: Running / Stopped
-Open LocalMux
+Open LocalAiMux
 Start/Stop API
 Copy Base URL
 Running Tasks: N
@@ -1963,7 +1922,7 @@ OpenAI Python/TS SDK 可以对 mock provider 完成 non-stream + stream。
 
 ### Acceptance
 
-第三方 OpenAI SDK → LocalMux → Codex → 返回正常结果。
+第三方 OpenAI SDK → LocalAiMux → Codex → 返回正常结果。
 
 ---
 
@@ -2089,7 +2048,7 @@ macOS + Windows packaging
 
 - MCP endpoint；
 - ACP bridge；
-- LocalMux native client SDK；
+- LocalAiMux native client SDK；
 - project/workspace profiles；
 - long-term memory（可选）；
 - remote node / device pairing；
@@ -2192,11 +2151,11 @@ migrations/0001_initial.sql
 
 ## Scenario A — 全新用户
 
-1. 安装 LocalMux；
+1. 安装 LocalAiMux；
 2. 打开应用；
 3. 自动发现 Codex/Qoder/Kimi；
 4. 点击 Codex 添加；
-5. LocalMux 判断已登录或提示官方登录流程；
+5. LocalAiMux 判断已登录或提示官方登录流程；
 6. 模型出现；
 7. 开启 Gateway；
 8. 创建 Key；
@@ -2235,7 +2194,7 @@ migrations/0001_initial.sql
 2. API Key 被 revoke 后立即失败；
 3. SQLite 搜索不到明文 secret；
 4. 日志导出不包含 token；
-5. LocalMux 默认没有公网监听。
+5. LocalAiMux 默认没有公网监听。
 
 ---
 
@@ -2312,11 +2271,11 @@ Best                           已配置
 
 **中文**
 
-> 智汇枢（LocalMux）是一款 Windows/macOS 本地 AI Runtime 管理器：自动发现你已经安装和订阅的 Codex、Qoder、WorkBuddy、Kimi、GLM、豆包等 AI 能力，并将它们统一成一个可路由、可观测、可延续会话的 OpenAI 兼容 API。
+> LocalAiMux（LocalAiMux）是一款 Windows/macOS 本地 AI Runtime 管理器：自动发现你已经安装和订阅的 Codex、Qoder、WorkBuddy、Kimi、GLM、豆包等 AI 能力，并将它们统一成一个可路由、可观测、可延续会话的 OpenAI 兼容 API。
 
 **English**
 
-> LocalMux is a local-first Windows and macOS AI runtime manager that discovers the agents and AI subscriptions you already use, normalizes their models, sessions and quota into one observable routing layer, and exposes them through a unified OpenAI-compatible API.
+> LocalAiMux is a local-first Windows and macOS AI runtime manager that discovers the agents and AI subscriptions you already use, normalizes their models, sessions and quota into one observable routing layer, and exposes them through a unified OpenAI-compatible API.
 
 ---
 
@@ -2354,4 +2313,4 @@ CHANGELOG
 
 # 50. 执行 Agent 的第一条任务
 
-> 从空仓库创建 LocalMux。只执行 Phase 0（Repository Foundation），不要提前实现真实 Provider。严格按 `PROJECT_PLAN.md` 建立目录、文档、Tauri 2 Desktop shell、Rust/pnpm workspace、SQLite migration 骨架、CI、`AGENTS.md` 与 Mock 页面。完成后运行 macOS/Windows 可执行的静态/CI 验证，输出目录树、测试结果、已完成项和 Phase 1 的明确入口。禁止为了“看起来完成更多”提前接入 Codex/Qoder 等 Provider。
+> 从空仓库创建 LocalAiMux。只执行 Phase 0（Repository Foundation），不要提前实现真实 Provider。严格按 `PROJECT_PLAN.md` 建立目录、文档、Tauri 2 Desktop shell、Rust/pnpm workspace、SQLite migration 骨架、CI、`AGENTS.md` 与 Mock 页面。完成后运行 macOS/Windows 可执行的静态/CI 验证，输出目录树、测试结果、已完成项和 Phase 1 的明确入口。禁止为了“看起来完成更多”提前接入 Codex/Qoder 等 Provider。

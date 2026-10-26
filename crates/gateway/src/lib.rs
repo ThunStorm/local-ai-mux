@@ -42,7 +42,8 @@ use uuid::Uuid;
 
 pub const DEFAULT_PORT: u16 = 8317;
 pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
-pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+pub const REQUEST_TIMEOUT: Duration =
+    Duration::from_secs(localmux_adapter_sdk::cli::MAX_CLI_IDLE_SECONDS);
 const AGENT_QUEUE_TIMEOUT: Duration = Duration::from_secs(30);
 const AGENT_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_BODY: usize = 1024 * 1024;
@@ -95,7 +96,9 @@ impl GatewayState {
             limiter: Arc::new(KeyRateLimiter::default()),
             active_runs: Arc::new(AtomicUsize::new(0)),
             agent_lanes: Arc::new(Mutex::new(HashMap::new())),
-            cli_idle_seconds: Arc::new(std::sync::atomic::AtomicU64::new(180)),
+            cli_idle_seconds: Arc::new(std::sync::atomic::AtomicU64::new(
+                localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT.as_secs(),
+            )),
             limits_update: Arc::new(Mutex::new(())),
             adapter_runs: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
@@ -108,17 +111,24 @@ impl GatewayState {
         let stored =
             localmux_storage::setting_string(&self.pool, "cli_idle_timeout_seconds").await?;
         let seconds = match stored {
-            None => 180,
+            None => localmux_adapter_sdk::cli::CLI_IDLE_TIMEOUT.as_secs(),
             Some(s) => s.parse::<u64>()?,
         };
-        anyhow::ensure!((30..=600).contains(&seconds), "invalid CLI idle timeout");
+        anyhow::ensure!(
+            (localmux_adapter_sdk::cli::MIN_CLI_IDLE_SECONDS
+                ..=localmux_adapter_sdk::cli::MAX_CLI_IDLE_SECONDS)
+                .contains(&seconds),
+            "invalid CLI idle timeout"
+        );
         self.cli_idle_seconds.store(seconds, Ordering::Relaxed);
         Ok(())
     }
     pub async fn set_cli_idle_timeout_seconds(&self, seconds: u64) -> anyhow::Result<()> {
         anyhow::ensure!(
-            (30..=600).contains(&seconds),
-            "CLI idle timeout must be 30–600 seconds"
+            (localmux_adapter_sdk::cli::MIN_CLI_IDLE_SECONDS
+                ..=localmux_adapter_sdk::cli::MAX_CLI_IDLE_SECONDS)
+                .contains(&seconds),
+            "CLI idle timeout must be 30–1200 seconds"
         );
         let _lock = self.limits_update.lock().await;
         sqlx::query("INSERT INTO settings(key,value) VALUES('cli_idle_timeout_seconds',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
@@ -535,7 +545,7 @@ pub fn router(state: GatewayState) -> Router {
         .route(
             "/api/health",
             get(|State(state): State<GatewayState>| async move {
-                Json(serde_json::json!({"status":"ok","active_tasks":state.active_tasks(),"execution_limits":{"request_timeout_seconds":REQUEST_TIMEOUT.as_secs(),"cli_idle_timeout_seconds":state.cli_idle_timeout_seconds(),"agent_stream_idle_timeout_seconds":state.cli_idle_timeout_seconds(),"stream_idle_timeout_seconds":STREAM_IDLE_TIMEOUT.as_secs(),"agent_max_concurrency":1,"agent_queue_timeout_seconds":AGENT_QUEUE_TIMEOUT.as_secs(),"agent_request_interval_seconds":AGENT_REQUEST_INTERVAL.as_secs()}}))
+                Json(serde_json::json!({"status":"ok","service":"LocalAiMux","version":env!("CARGO_PKG_VERSION"),"active_tasks":state.active_tasks(),"execution_limits":{"request_timeout_seconds":REQUEST_TIMEOUT.as_secs(),"cli_idle_timeout_seconds":state.cli_idle_timeout_seconds(),"agent_stream_idle_timeout_seconds":state.cli_idle_timeout_seconds(),"stream_idle_timeout_seconds":STREAM_IDLE_TIMEOUT.as_secs(),"agent_max_concurrency":1,"agent_queue_timeout_seconds":AGENT_QUEUE_TIMEOUT.as_secs(),"agent_request_interval_seconds":AGENT_REQUEST_INTERVAL.as_secs()}}))
             }),
         )
         .route("/v1/models", get(models))
@@ -1155,6 +1165,9 @@ async fn chat_inner(
         }
         Err(_) => return call.budget().timeout_response(),
     };
+    if response.text.len() > 8 * 1024 * 1024 {
+        return adapter_error(AdapterError::OutputTooLarge);
+    }
     response.metadata = response.metadata.validated();
     drop(adapter_timer);
     drop(adapter_run);
@@ -1309,6 +1322,11 @@ fn adapter_error_details(kind: &AdapterError) -> (StatusCode, &'static str, &'st
             StatusCode::GATEWAY_TIMEOUT,
             "LMX_PROCESS_TIMEOUT",
             "Local execution timed out",
+        ),
+        AdapterError::OutputTooLarge => (
+            StatusCode::BAD_GATEWAY,
+            "LMX_OUTPUT_TOO_LARGE",
+            "Upstream output exceeds the local size limit",
         ),
         AdapterError::ContextLimit => (
             StatusCode::BAD_REQUEST,

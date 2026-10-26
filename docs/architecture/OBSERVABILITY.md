@@ -1,5 +1,7 @@
 # Observability
 
+v0.2.0：health新增service=LocalAiMux与workspace编译version；入站总期1200秒、CLI/Agent空闲30–1200秒。已有安全request_id、实际触发timeout_layer/timeout_limit_ms、记录快照和未知来源保留；不把当前设置写回旧诊断，不记录原始Provider错误或凭据。当前验证见[封版](../releases/V0_2_0_FREEZE.md)。
+
 Phase 0 initializes `tracing-subscriber` with `RUST_LOG` filtering. Do not log secrets, prompt text or response text. Structured request events arrive with the Gateway.
 
 2026-10-08：生成调用通过独立 SQLite `call_records` 形成元数据历史，覆盖 Chat、Responses、试对话、短测试及失败/超时/取消/部分终态。默认记录元数据，Chat/Responses `store:false` 不保存。只收集可信 typed 用量/型号和本地安全码，默认不持久化正文、请求参数、metadata 或上游错误原文；用量和费用未知不能当 0。页面支持筛选、分页、详情、Responses 各轮关联和经确认清理终态记录，原路由事件保留。SQLite 失败的诊断文字固定，不包含数据内容。见[会话模型](SESSION_MODEL.md)。

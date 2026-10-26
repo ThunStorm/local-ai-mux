@@ -1,6 +1,6 @@
 # WorkBuddy 接入调研（2026-10-06）
 
-当前结论：还不能把 WorkBuddy 桌面订阅作为 LocalMux 的模型上游接入。独立 CodeBuddy Code 的公开 CLI 可接入，但它与 WorkBuddy 的账户、模型目录和额度不能混同；本轮不新增 WorkBuddy Adapter。
+当前结论：还不能把 WorkBuddy 桌面订阅作为 LocalAiMux 的模型上游接入。独立 CodeBuddy Code 的公开 CLI 可接入，但它与 WorkBuddy 的账户、模型目录和额度不能混同；本轮不新增 WorkBuddy Adapter。
 
 ## 官方接口与方向
 
@@ -9,7 +9,7 @@
 | CodeBuddy Code headless CLI | [CLI 参考](https://www.codebuddy.cn/docs/cli/reference)、[无头模式](https://www.codebuddy.cn/docs/cli/headless) | 当前 CodeBuddy Adapter 使用的公开入口；不能单凭同名运行时证明 WorkBuddy 桌面账户共享 |
 | CodeBuddy Code ACP / HTTP | [ACP](https://www.codebuddy.cn/docs/cli/acp)、[HTTP API](https://www.codebuddy.cn/docs/cli/http-api) | ACP 有公开协议；HTTP 标记 Beta，内部 `/internal/*` 无兼容保证。属于 CodeBuddy Code，未找到 WorkBuddy 桌面订阅对外暴露模型调用的稳定承诺 |
 | WorkBuddy 企业智能体 API | [企业智能体](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/CloudAgent) | 官方说明通过企业 API Key 集成企业 Agent，独立 Session/Runtime；这是另一授权通道，不等于个人桌面订阅。本轮没有企业 Key 或接口合同，因此未实施 |
-| WorkBuddy 自定义模型 | [模型配置](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Model) | WorkBuddy 可作为下游调用自定义 API；方向是 WorkBuddy → 模型服务。可由用户尝试把 LocalMux 配为它的模型服务，但不能用来把 WorkBuddy 内置模型导出到 LocalMux，且真实兼容性尚未验收 |
+| WorkBuddy 自定义模型 | [模型配置](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Model) | WorkBuddy 可作为下游调用自定义 API；方向是 WorkBuddy → 模型服务。可由用户尝试把 LocalAiMux 配为它的模型服务，但不能用来把 WorkBuddy 内置模型导出到 LocalAiMux，且真实兼容性尚未验收 |
 | WorkBuddy 连接器 | [连接器](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Connector) | 给 WorkBuddy 增加外部数据/工具能力，不能据此导出订阅模型 |
 
 官方文档部分直接抓取超时，以上内容由官方站点搜索索引交叉核对；ACP/环境变量页可直接读取。缺少公开承诺表示证据不足，不断言厂商永远不会支持。社区代理不作为本项目接口依据。

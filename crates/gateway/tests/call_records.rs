@@ -59,6 +59,13 @@ impl Adapter for Fixture {
         }])
     }
     async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
+        if request.prompt == "oversized" {
+            return Ok(NormalizedResponse {
+                text: "x".repeat(8 * 1024 * 1024 + 1),
+                provider_session_id: None,
+                metadata: Default::default(),
+            });
+        }
         if request.prompt == "failure" {
             return Err(AdapterError::ProviderUnavailable);
         }
@@ -805,16 +812,16 @@ async fn execution_setting_validates_persists_and_preserves_other_settings() {
     let state = GatewayState::new(pool.clone());
     state.load_execution_limits().await.unwrap();
     assert_eq!(state.cli_idle_timeout_seconds(), 180);
-    for bad in [0, 29, 601, u64::MAX] {
+    for bad in [0, 29, 1201, u64::MAX] {
         assert!(state.set_cli_idle_timeout_seconds(bad).await.is_err());
     }
     assert_eq!(state.cli_idle_timeout_seconds(), 180);
-    for seconds in [30, 600, 300] {
+    for seconds in [30, 600, 300, 1200] {
         state.set_cli_idle_timeout_seconds(seconds).await.unwrap();
     }
     let restarted = GatewayState::new(pool.clone());
     restarted.load_execution_limits().await.unwrap();
-    assert_eq!(restarted.cli_idle_timeout_seconds(), 300);
+    assert_eq!(restarted.cli_idle_timeout_seconds(), 1200);
     assert_eq!(
         localmux_storage::setting_bool(&pool, "close_to_tray")
             .await
@@ -832,6 +839,30 @@ async fn execution_setting_validates_persists_and_preserves_other_settings() {
         .unwrap();
     let body: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(body["execution_limits"]["cli_idle_timeout_seconds"], 300);
-    assert_eq!(body["execution_limits"]["request_timeout_seconds"], 600);
+    assert_eq!(body["service"], "LocalAiMux");
+    assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(body["execution_limits"]["cli_idle_timeout_seconds"], 1200);
+    assert_eq!(body["execution_limits"]["request_timeout_seconds"], 1200);
+}
+
+#[tokio::test]
+async fn oversized_nonstream_results_are_rejected_before_body_recording_for_both_endpoints() {
+    for endpoint in ["chat", "responses"] {
+        let (state, key) = setup().await;
+        let response = router(state.clone())
+            .oneshot(request(&key, endpoint, "oversized", false, true))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(bytes.len() < 4096);
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["error"]["code"], "LMX_OUTPUT_TOO_LARGE");
+        let records = rows(&state).await;
+        assert_eq!(
+            records[0].error_code.as_deref(),
+            Some("LMX_OUTPUT_TOO_LARGE")
+        );
+        assert_eq!(state.active_tasks(), 0);
+    }
 }

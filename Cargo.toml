@@ -2,6 +2,9 @@
 members = ["apps/desktop/src-tauri", "crates/core", "crates/domain", "crates/api-types", "crates/adapter-sdk", "crates/secrets", "crates/gateway", "crates/discovery", "crates/adapters/codex", "crates/adapters/qoder", "crates/adapters/codebuddy", "crates/adapters/kimi", "crates/adapters/glm", "crates/adapters/ark", "crates/storage", "crates/quota", "crates/router", "crates/security", "crates/telemetry"]
 resolver = "2"
 
+[workspace.package]
+version = "0.2.0"
+
 [profile.release]
 codegen-units = 1
 lto = true

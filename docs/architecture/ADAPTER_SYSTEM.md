@@ -1,5 +1,11 @@
 # Adapter 契约
 
+## v0.2.0 当前约束
+
+HTTP Adapter在复制chunk前核对JSON大小（目录4MiB、非流响应64MiB）；解码正文最多8MiB，Gateway对非流Chat/Responses再核对一遍。OutputTooLarge为固定安全错误，SSE缓冲扩容前同样验证，不透传超大厂商正文。
+
+展示产品名LocalAiMux；Codex initialize.clientInfo.title和version来自当前产品/workspace版本，技术clientInfo.name仍localmux。NormalizedRequest.cli_idle_timeout为入站本机快照，30–1200秒、默认180，不能作为供应商生成参数透传。Gateway总期1200秒；RPC/目录/退出及客户端独立限制见[计时契约](../api/STREAMING.md#v020-当前计时契约2026-10-26)。下方日期段的旧总期/能力结论属于历史演进，能力仍以当前CLI公开Schema和实际目录为准。
+
 `localmux-adapter-sdk::Adapter` 提供 `id/kind/health/list_models/get_quotas/invoke/invoke_stream`，输入与输出分别是 `NormalizedRequest`、`NormalizedResponse` 与增量 `NormalizedStream`。旧 `get_quota` 由默认 `get_quotas` 包装，Codex 分别报告多个窗口。真实 Agent/Provider 实现必须返回可验证模型能力与统一 `AdapterError`，不能在 Router/GUI 散布 Provider 分支，也不能把供应商异常或凭据原文直接发给 API 消费者。
 
 Phase 1 的 `MockEcho` 只用于离线验收，生产桌面 Gateway 不预置 Mock。Codex 使用官方 App Server；Qoder 与 CodeBuddy 使用各自官方 headless CLI，并复用 `adapter-sdk::cli` 的 JSONL 进程管理。桌面控制层用静态 `ADAPTERS` 注册表统一 CLI 文件名和构造函数；每个已显式添加的 Adapter 才注册进 Gateway 动态目录。费用状态没有上游证据时一律 `UNKNOWN`。本机已安装 Qoder 与独立 CodeBuddy Code CLI；WorkBuddy 内部脚本不等同独立 CLI，离线协议测试仍不代表真实连接验收。

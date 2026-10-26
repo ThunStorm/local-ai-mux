@@ -1,4 +1,4 @@
-# LocalMux / 智汇枢：桌面订阅统一 API 产品对齐与实施计划
+# LocalAiMux：桌面订阅统一 API 产品对齐与实施计划
 
 > 文档类型：基于当前代码的评估 + 可交付 Codex/Agent 的增量实施计划  
 > 日期：2026-09-28  
@@ -12,11 +12,11 @@
 
 将用户已经安装、已经拥有授权的桌面 AI 应用，在可用且获准的官方本机运行时/CLI/SDK 接口边界内，包装成**本机 OpenAI 兼容 API 服务**。普通用户只需：
 
-1. 安装并打开 LocalMux；自动扫描 Mac/Windows 中的 AI 软件。
-2. 在应用卡片上点击「添加」；LocalMux 自动找到本机可用的官方接入途径，并分别验证运行时、登录、模型目录。
+1. 安装并打开 LocalAiMux；自动扫描 Mac/Windows 中的 AI 软件。
+2. 在应用卡片上点击「添加」；LocalAiMux 自动找到本机可用的官方接入途径，并分别验证运行时、登录、模型目录。
 3. 在一个界面看到**连接状态 / 模型状态 / 额度状态**；点击一个模型可按用户确认发送极小的真实测试请求。
-4. 点击「启动 API」；复制 **Base URL、LocalMux API Key、模型 ID、现成配置/示例**，即可交给其他 OpenAI SDK / 客户端使用。
-5. 重启电脑或 LocalMux 后，无需重新填写路径或重复登录；只有上游会话过期时提示在原应用登录。
+4. 点击「启动 API」；复制 **Base URL、LocalAiMux API Key、模型 ID、现成配置/示例**，即可交给其他 OpenAI SDK / 客户端使用。
+5. 重启电脑或 LocalAiMux 后，无需重新填写路径或重复登录；只有上游会话过期时提示在原应用登录。
 
 **本阶段不按 free/cheap/balanced/best 分类，不自动判定所谓免费模型，不把另一套付费 API Key 当作现有桌面订阅。** 用户优先选择真实模型 ID。额度只展示上游能证明的事实；未知就是未知。
 
@@ -60,7 +60,7 @@
 - **Connection**：某次经过用户确认的可用连接实例，指向 Runtime + 账号上下文；不只是“在磁盘上发现应用”。
 - **Model**：上游为当前连接实际报告的模型/选择档位；未报告的模型不能假冒“全部可用”。
 - **Quota Bucket**：上游提供的一个额度窗口/积分池，明确单位、来源、重置时间和更新时间。
-- **LocalMux API Key**：本机入口 Key，只认证 LocalMux；**不等于供应商 Key，也不创造新的上游额度**。
+- **LocalAiMux API Key**：本机入口 Key，只认证 LocalAiMux；**不等于供应商 Key，也不创造新的上游额度**。
 
 ### 2.2 使用方式边界
 
@@ -82,7 +82,7 @@ Tauri GUI
   ├─ Application Inventory（安装发现/去重/手动添加）
   ├─ Connection Orchestrator（一键添加、接入决策、授权、验证、刷新）
   ├─ Status / Model / Quota Store（一个快照统一供首页、模型页、API 页）
-  └─ API Setup（本机地址、LocalMux Key、模型 ID、示例）
+  └─ API Setup（本机地址、LocalAiMux Key、模型 ID、示例）
           │
 Adapter Registry + Bridge Resolver（静态注册、按应用/OS/版本匹配）
           ├─ codex adapter → official App Server
@@ -165,7 +165,7 @@ struct AdapterDescriptor {
 
 ### 4.4 模型列表页面
 
-- 以应用/连接分组，展示「官方显示名称、上游原始 ID、LocalMux ID、支持文本/流式/续接、目录完整度、验证状态、最后更新时间」。
+- 以应用/连接分组，展示「官方显示名称、上游原始 ID、LocalAiMux ID、支持文本/流式/续接、目录完整度、验证状态、最后更新时间」。
 - 提供搜索、按应用过滤、手动刷新和单个模型测试；清楚区分“官方列出”和“已经验证能调用”。
 - 当供应商只报告某一个选中模型时，展示 `1 个已报告模型 · 目录可能不完整`，不得生成假完整列表。
 - 模型变化时保留人工收藏的 ID，但下架/失效模型标为不可用；`/v1/models` 列出当前可路由、已由上游目录报告的模型，不纳入纯历史记录。
@@ -175,10 +175,10 @@ struct AdapterDescriptor {
 服务已启动时放在首屏：
 
 - 状态：已运行 / `http://127.0.0.1:8317/v1` / 可用模型数 / 上一次健康检查。
-- LocalMux API Key：默认自动配置一个最小权限本地 Key；明文在 OS 凭据库中保存，GUI 初始遮罩；用户点击「显示/复制」后才展示或复制；失去凭据时走显式重置和旧 Key 撤销。
+- LocalAiMux API Key：默认自动配置一个最小权限本地 Key；明文在 OS 凭据库中保存，GUI 初始遮罩；用户点击「显示/复制」后才展示或复制；失去凭据时走显式重置和旧 Key 撤销。
 - 模型下拉：**实际从 `/v1/models` 当前授权 Key 的可用结果获取**；默认优先前次选定的真实模型，没有则请用户选择，不制造一个万能 ID。
 - 单独复制按钮：Base URL、API Key、Model ID、Endpoint、cURL、Python SDK、JavaScript SDK、JSON 配置块。
-- JSON 配置示例：`{ "baseURL": "http://127.0.0.1:8317/v1", "apiKey": "<用户主动复制的 LocalMux Key>", "model": "codex/<当前真实模型ID>" }`。示例必须由实时值生成，不能写死当前的演示模型。
+- JSON 配置示例：`{ "baseURL": "http://127.0.0.1:8317/v1", "apiKey": "<用户主动复制的 LocalAiMux Key>", "model": "codex/<当前真实模型ID>" }`。示例必须由实时值生成，不能写死当前的演示模型。
 - 「测试 API」以当前 Key 调本机网关发送需要用户确认的短文本请求；返回状态、实际使用模型、耗时、错误修复提示；**不自动调用付费上游**。
 - 默认在 Key 作用域中允许已连接文本推理（若是 Agent Runtime，用户必须在 GUI **明确**授权它的只读 Agent profile，不能静默绕过既有 `agent:invoke` 安全门槛）；创建流程由一段简单解释替代复杂权限表，高级设置另放折叠区。
 - 没有可用模型时可以启动 API、复制地址/Key，但清楚显示“暂无可调用模型”。不写“服务已就绪，可以聊天”。
@@ -315,7 +315,7 @@ struct NormalizedRequest {
 
 **主要文件**：`apps/desktop/src/App.tsx`（实施时按模块拆分，不再增大巨型文件）、`apps/desktop/src-tauri/src/*`、`crates/security/*`、`crates/secrets/*`、`crates/storage/*`。
 
-- [ ] 第一次开启 API 时初始化一个稳定最小权限 LocalMux Key，哈希在 SQLite、明文仅在 OS vault；幂等，重启后 GUI 必须能显式显示/复制。
+- [ ] 第一次开启 API 时初始化一个稳定最小权限 LocalAiMux Key，哈希在 SQLite、明文仅在 OS vault；幂等，重启后 GUI 必须能显式显示/复制。
 - [ ] OS vault 丢失/拒绝访问时不得假装 Key 可用：显式创建新 Key、原 Key 撤销；绝不在日志/错误/设置明文落盘。
 - [ ] Agent 类调用仍遵守 `agent:invoke` 与 GUI 显式只读授权；向导显示一句普通人能理解的提示。
 - [ ] 用真实绑定端口、授权后的模型数据生成 Base URL、Key、Model ID、cURL、Python/TS/JSON；一键单项复制和整套配置复制（含 Key 需要明确点击）。
@@ -369,7 +369,7 @@ docs/adapters/<APP>.md      # 接入方式、版本、Auth、模型、额度、�
 - [ ] 额度按官方机器接口返回；没有则 Unknown；不把本地统计当剩余额度。
 - [ ] 只读文本调用、增量流、取消/超时/错误映射；无法保障安全则不曝光该能力。
 - [ ] 同一 app 多连接/重启/CLI 消失/版本变更的行为测试。
-- [ ] 官方 Python/TS SDK 调 LocalMux Gateway 的端到端测试；真实上游验收记录带版本与日期。
+- [ ] 官方 Python/TS SDK 调 LocalAiMux Gateway 的端到端测试；真实上游验收记录带版本与日期。
 - [ ] 更新支持矩阵与 HANDOFF，编译测试并做相应平台安装验收。
 
 ## 10. 验收矩阵：禁止“扫描成功=功能完成”
@@ -378,7 +378,7 @@ docs/adapters/<APP>.md      # 接入方式、版本、Auth、模型、额度、�
 |---|---|
 | 仅安装 Qoder Desktop，无获支持 Runtime | 可登记；显示桥缺失/指引；不得显示已可 API 调用 |
 | 已装 Codex CLI，但未登录 | 检测到 → 添加时提示在原 App 登录 → 不注册可路由模型 |
-| 已登录 Codex，目录返回多个模型 | 显示原厂报告的列表+LocalMux ID；单模型可手动测试 |
+| 已登录 Codex，目录返回多个模型 | 显示原厂报告的列表+LocalAiMux ID；单模型可手动测试 |
 | WorkBuddy 包内 CLI 依赖缺失 | 指明运行时依赖，允许一键修复方案但不静默装危险来源 |
 | CodeBuddy 只能得当前选中模型 | 展示该模型，目录标 `PARTIAL`，不声称所有模型 |
 | Quota 接口不可用 | 连接/模型可用仍保持；额度显示未知、来源和时间 |

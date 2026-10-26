@@ -1,4 +1,6 @@
 $ErrorActionPreference = 'Stop'
+node scripts/check-release.mjs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cargo fmt --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cargo test --workspace

@@ -1,5 +1,9 @@
 # 错误模型
 
+v0.2.0：HTTP/自定义Adapter非流式大结果现在与流式一致受8MiB正文上限约束，超限返回502 LMX_OUTPUT_TOO_LARGE；HTTP目录JSON4MiB、响应JSON64MiB也在解析前限制，不把资源限制误报为型号不存在或厂商停服。
+
+v0.2.0：30–1200秒CLI范围由后端校验，Gateway总预算1200；LMX_PROCESS_TIMEOUT和固定timeout_layer/timeout_limit_ms形状兼容。超过范围不落设置、不发生成；旧版合法设置保留。startup/RPC/HTTP/client等独立层不因CLI范围扩大而改写，详见[Streaming当前契约](STREAMING.md#v020-当前计时契约2026-10-26)。
+
 Gateway 返回 HTTP 状态与 OpenAI 风格 `{"error":{"message","type","code","error_code"}}`。已覆盖无 Key/权限不足/撤销、畸形请求、模型不可用、Provider 不可用、额度与限流、free 池耗尽、Session 未找到或无法续接。错误不包含供应商凭据、提示词或原始上游响应。
 
 `LMX_SESSION_NOT_FOUND` 表示 `previous_response_id` 不存在、未完成或不是该会话最新响应；`LMX_SESSION_RESUME_FAILED` 表示上游不支持续接、用户要求切换模型或黏性 Provider 不可用。`LMX_FREE_POOL_EXHAUSTED` 永不触发收费模型静默回退。

@@ -1,5 +1,11 @@
 # OpenAI 兼容 API
 
+## v0.2.0 当前基线
+
+服务名LocalAiMux，绑定127.0.0.1:8317；公开端点与Key/模型/连接过滤、严格参数能力、store:false、Responses会话身份保持。GET /api/health兼容增加service=LocalAiMux和编译version；execution_limits报告request_timeout_seconds=1200，cli_idle_timeout_seconds与agent_stream_idle_timeout_seconds为当前已保存值（30–1200，默认180），stream_idle_timeout_seconds=180仅指HTTP Provider typed流等待。生成请求不能覆盖设置；桌面试对话客户端仍独立120秒。精确层级见[Streaming](STREAMING.md#v020-当前计时契约2026-10-26)。
+
+下方日期段是兼容协议演进；旧计时数值以当前基线为准。真实Provider/平台验收见[TODO](../TODO.md)。
+
 已实现 `GET /v1/models` 和 `POST /v1/chat/completions`，支持 Mock `mock/echo` 文字输入、非流式和 SSE；请求需要 `Authorization: Bearer lmx_...`。聊天只接受 `system/user/assistant` 文字消息，工具与多模态尚未启用。官方 Python/TypeScript SDK 已通过 Mock 模型列表、非流式与流式消费测试。
 
 Chat 保留消息顺序与角色。HTTP Provider 发送完整合法文字消息；Codex/Qoder/Qoder CN/CodeBuddy 的最小无状态桥支持连续前置 system + 单条 user。连续同角色指令按原顺序以明确边界合并，返回 `localmux.normalization=leading_instructions_v1`；Codex 按当前 CLI 的公开 Schema 自动核对 start/resume，分别以独立字段映射前置 system/developer，不按版本号猜兼容性；CLI 单 system 层拒绝 developer，不能降级成 user。非前置指令、未实现历史/工具/多模态、developer 后再放 system 都明确拒绝，不丢上下文。HTTP 的任意历史与 native session resume 是独立能力。

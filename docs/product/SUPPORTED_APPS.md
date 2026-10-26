@@ -1,18 +1,17 @@
-# 应用支持矩阵
+# LocalAiMux 应用支持矩阵
 
-以下为截至 2026-10-06 的已实现能力；「离线」表示 fixture/Mock 测试，不代表用户订阅已通过真实调用。模型只展示上游实际报告的名称或 ID。额度 UNKNOWN 表示没有可验证的机器数据。
+v0.2.0源码基线，更新2026-10-26。这里描述已实现Bridge，不把本机登录、已保存目录或历史某型号成功当作当前全部型号通过。运行时具体版本/目录随用户安装而变化，能力取当前公开Schema/型号证据；真实样本日期见[历史交接](../history/HANDOFF_THROUGH_2026-10-22.md)。
 
-| 应用 / Bridge | 发现 | 显式连接 | 模型目录 | 额度 | 文本调用 | 平台验收 |
-|---|---|---|---|---|---|---|
-| Codex / 官方 App Server | macOS、Windows 候选 | 用户已保存连接，当前 CLI 0.160.0 | 官方 `model/list` 动态列表 | 官方主/次用量窗口分别保存，非 Credits 余额；本机此前已读到单窗口 | 安装版 Computer Use 单 user SSE：gpt-6-luna 8.4 秒、gpt-6-sol 38.2 秒完成；多消息明确拒绝 | macOS 两型号真实流式通过；其他型号/续接/Windows 实机待验 |
-| Qoder / 官方 CLI | Qoder.app 与全局 CLI 1.1.64 | 应用内按钮启动官方登录；本机已登录 | `MODEL` 文本目录实测报告 17 个名称 | UNKNOWN | 单 user 文本及 SSE 离线通过；多消息明确拒绝 | macOS 安装版已保存连接并显示 17 项，推理与 Windows 实机待验 |
-| Qoder CN / 官方独立 CLI | Qoder CN.app、`~/.qoder-cn/entry/qodercn` 1.1.64 | 本机 CLI 未登录；应用内仅在认证缺失时引导官方登录 | 登录后由独立 `qodercn --list-models` 报告，不继承全球版 17 项 | UNKNOWN | 单 user 文本及 SSE 共用离线协议，真实调用待验 | macOS CLI 已安装，登录/模型/推理待验 |
-| WorkBuddy | 本机独立 WorkBuddy.app 5.7.6 | 包内 2.156.0 CLI 的公开 config 命令缺完整产物；未证明桌面订阅可公开导出 | UNKNOWN | UNKNOWN | 不可路由 | 只读扫描可见，不进入应用主列表；见 [调研](../adapters/WORKBUDDY.md) |
-| CodeBuddy CN | 独立 CodeBuddy CN.app | `app/bin/code` 为编辑器启动器 | UNKNOWN | UNKNOWN | 不可路由 | 只读扫描可见，不进入应用主列表 |
-| CodeBuddy Code / 官方独立 CLI | 本机 2.161.0，NVM Node 24 安装；可扫描 `codebuddy`/`cbc` | 用户点击添加才保存连接；目录不证明登录/订阅 | 优先显式选中模型；未设置时解析公开帮助；本机报 17 ID，PARTIAL | UNKNOWN | 单 user 文本及 SSE 离线通过；多消息明确拒绝 | 真实 CLI 只读目录通过，真实推理与 Windows 实机待验 |
-| MiMo Desktop | 可登记桌面应用 | 无已验证桌面订阅 Bridge；应用内可打开官方桌面登录 | UNKNOWN | UNKNOWN | 不可路由 | macOS 登记已验证 |
-| MiMo Code CLI / 官方本机能力 API | 本机 `~/.mimocode/bin/mimo` 已发现 | 用户点击后启动 `mimo serve` 并签发限 MiMo 型号、最长 30 分钟的本机令牌 | 本机回环 `/v1/models` 在临时探测中返回 7 个型号；应用安装版连接待验 | UNKNOWN | HTTP 文本子集，真实推理未验 | macOS CLI 目录与限型号令牌已实测；与 Desktop 登录态不混同 |
-| MiMo 开放平台 / API Key | 与桌面登记分离 | 用户另行提供 Key 后验证目录，本次运行仅存内存 | 官方 API 实时返回 | UNKNOWN | HTTP 文本通道离线测试 | 真实 Key 未提供 |
-| Ollama、TRAE 等仅检测应用 | 可登记或检测 | 无当前可路由连接 | UNKNOWN | UNKNOWN | 不可路由 | 以发现页诊断为准 |
+| 应用 / Bridge | 连接与目录实现 | 文本/能力范围 | 额度与真实验收边界 |
+|---|---|---|---|
+| Codex / 官方App Server | 用户显式连接；动态model/list，当前安装CLI公开Schema核对 | typed流/非流、前置system/developer、按型号effort、原生Responses续接；Chat不伪造历史能力 | 官方多窗口用量；已有部分macOS真实样本，不扩大到所有型号/续接/Windows |
+| Qoder / 官方CLI | 独立全球版连接，JSON/真实MODEL文本目录 | 前置system+单user，公开headless JSONL流/非流与CLI会话入口，未知参数拒绝 | 积分尚未采集；历史连接/调用记录不替代本版全部型号真实质量 |
+| Qoder CN / 官方独立CLI | 独立app_id/路径/登录/目录，不继承全球版账户 | 与相应公开CLI协议映射，能力按精确身份 | 余额未知，真实连接/质量按独立验收 |
+| CodeBuddy Code / 官方独立CLI | 独立CLI/NVM入口发现；显式覆盖或公开help解析，目录可PARTIAL | 前置system+单user、只读/无工具请求、JSONL与续接入口 | 不等同WorkBuddy桌面订阅；额度未知、真实工具/订阅与Windows仍待核验 |
+| MiMo Code CLI / 公开本机能力API | 用户点击后临时serve、目录、限型号短时token；断开撤销 | HTTP文本能力按精确目录元数据；不读取Desktop登录态 | 临时目录/令牌已有历史只读核验，推理/续期和Windows另验 |
+| MiMo开放平台 / 用户API Key | 显式输入独立Key，本次进程内存持有 | HTTP文本/完整合法消息与已报告参数 | 不共享桌面订阅；额度未知，真实账单/Key验收独立 |
+| WorkBuddy / CodeBuddy CN桌面 | 只读发现/登记，不注册当前Gateway | 尚无已实现且验证的桌面Bridge | 不用编辑器启动器或私有登录态冒充模型接入；[WorkBuddy调研](../adapters/WORKBUDDY.md) |
+| MiMo Desktop / Ollama / TRAE等仅检测应用 | 可发现/登记，按支持注册表进入主列表 | 本版没有相应可路由Adapter | 不因安装就开放调用 |
+| GLM / Ark / Kimi组件 | 独立crate/离线测试；未接生产注册（Kimi明确Unsupported） | 以各Adapter契约为准 | 不宣称真实账户/费用/平台通过 |
 
-连接路径、安全边界及逐项人工验收见 [Codex](../adapters/CODEX.md)、[Qoder](../adapters/QODER.md)、[CodeBuddy](../adapters/CODEBUDDY.md)；实际进度见 [交接记录](../HANDOFF.md)。
+所有Agent调用仍需Key显式授权；费用/用量/额度未知不当零或免费。普通可恢复错误、局部熔断、截断和预算不足不能自动升级为供应商停服结论。下一步与外部验收见[TODO](../TODO.md)，当前安装验证见[封版记录](../releases/V0_2_0_FREEZE.md)。

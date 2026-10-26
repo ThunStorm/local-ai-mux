@@ -299,7 +299,10 @@ mod tests {
             Some("UNKNOWN")
         );
         assert!((35_000..=35_005).contains(&budget.accepted.elapsed().as_millis()));
-        assert!(budget.deadline - tokio::time::Instant::now() <= Duration::from_secs(565));
+        assert!(
+            budget.deadline - tokio::time::Instant::now()
+                <= super::super::REQUEST_TIMEOUT - Duration::from_secs(35)
+        );
         drop(permit);
         drop(
             state
@@ -376,7 +379,7 @@ mod tests {
             .unwrap();
         tokio::task::yield_now().await;
         assert_eq!(state.active_tasks(), 1);
-        tokio::time::advance(Duration::from_secs(601)).await;
+        tokio::time::advance(super::super::REQUEST_TIMEOUT + Duration::from_secs(1)).await;
         tokio::task::yield_now().await;
         assert_eq!(state.active_tasks(), 0);
         let lane = state

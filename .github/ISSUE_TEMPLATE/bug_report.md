@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a LocalMux defect
+about: Report a LocalAiMux defect
 ---
 
 ## Expected behavior

@@ -373,7 +373,7 @@ impl AppServer {
             next_id: 1,
             dir,
         };
-        process.request("initialize", json!({"clientInfo":{"name":"localmux","title":"LocalMux","version":"0.1.0"},"capabilities":{"explicitGatewayOauth":true}})).await?;
+        process.request("initialize", json!({"clientInfo":{"name":"localmux","title":"LocalAiMux","version":env!("CARGO_PKG_VERSION")},"capabilities":{"explicitGatewayOauth":true}})).await?;
         process.send(json!({"method":"initialized"})).await?;
         let (oauth, _) = process
             .request("account/gatewayOAuth/read", json!({}))

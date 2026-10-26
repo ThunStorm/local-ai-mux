@@ -550,6 +550,9 @@ async fn create_inner(
             return adapter_error(kind);
         }
     };
+    if result.text.len() > 8 * 1024 * 1024 {
+        return adapter_error(AdapterError::OutputTooLarge);
+    }
     result.metadata = result.metadata.validated();
     drop(adapter_timer);
     drop(adapter_run);

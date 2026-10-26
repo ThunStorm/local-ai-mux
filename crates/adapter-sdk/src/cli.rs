@@ -8,6 +8,8 @@ use tokio::{
     time::timeout,
 };
 
+pub const MIN_CLI_IDLE_SECONDS: u64 = 30;
+pub const MAX_CLI_IDLE_SECONDS: u64 = 1200;
 pub const CLI_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 
 const MAX_CLI_BYTES: usize = 1024 * 1024;

@@ -1,5 +1,9 @@
 # 数据库
 
+## v0.2.0 数据兼容
+
+Schema仍13，无新迁移。CLI设置cli_idle_timeout_seconds沿用settings、启动校验范围30–1200，现有600等合法值保留；总期1200不写回旧调用诊断。LocalAiMux仍使用已有LocalMux数据目录、app.localmux.desktop和localmux.db，不能因品牌/版本升级移动历史或轮换Key。会话筛选/导出保持单读事务快照、无历史回填。部署须任务0、逻辑备份、integrity/FK及前后数据核对。
+
 SQLite 通过版本化 migration 初始化：`0001` 设置、`0002` API Key 哈希与撤销、`0003` 显式添加的 CLI 路径、`0004` 路由策略与上游单值额度快照、`0005` Conversation/ProviderSession/Response ID 映射及路由事件、`0008` 显式添加的桌面应用清单、`0009` 多额度桶。外键已开启，续接映射以事务写入。
 
 `added_applications` 只保存应用 ID 与安装路径；它不建立 `connections` 行，也不会把桌面登录态注册到 Gateway。

@@ -11,6 +11,28 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use std::{collections::HashMap, sync::RwLock};
 
+const MAX_CATALOG_JSON_BYTES: usize = 4 * 1024 * 1024;
+const MAX_RESPONSE_JSON_BYTES: usize = 64 * 1024 * 1024;
+const MAX_RESPONSE_TEXT_BYTES: usize = 8 * 1024 * 1024;
+async fn bounded_json(response: reqwest::Response, limit: usize) -> Result<Value, AdapterError> {
+    if response
+        .content_length()
+        .is_some_and(|len| len > limit as u64)
+    {
+        return Err(AdapterError::OutputTooLarge);
+    }
+    let mut stream = response.bytes_stream();
+    let mut buffer = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| AdapterError::ProviderUnavailable)?;
+        if chunk.len() > limit.saturating_sub(buffer.len()) {
+            return Err(AdapterError::OutputTooLarge);
+        }
+        buffer.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&buffer).map_err(|_| AdapterError::ProcessFailed)
+}
+
 pub struct HttpProvider {
     id: &'static str,
     base: String,
@@ -128,10 +150,7 @@ impl Adapter for HttpProvider {
         let response = self
             .response(self.client.get(self.endpoint("models")))
             .await?;
-        let body: Value = response
-            .json()
-            .await
-            .map_err(|_| AdapterError::ProcessFailed)?;
+        let body = bounded_json(response, MAX_CATALOG_JSON_BYTES).await?;
         let data = body["data"].as_array().ok_or(AdapterError::Unsupported)?;
         // Official MiMo SDK defines GET /provider model.temperature and model.limit.output.
         // Only read this public loopback metadata after an explicitly connected catalog request;
@@ -146,7 +165,7 @@ impl Adapter for HttpProvider {
                 .await
             {
                 Ok(response) if response.status().is_success() => {
-                    response.json::<Value>().await.ok()
+                    bounded_json(response, MAX_CATALOG_JSON_BYTES).await.ok()
                 }
                 _ => None,
             }
@@ -194,13 +213,13 @@ impl Adapter for HttpProvider {
                     .json(&body),
             )
             .await?;
-        let value: Value = response
-            .json()
-            .await
-            .map_err(|_| AdapterError::ProcessFailed)?;
+        let value = bounded_json(response, MAX_RESPONSE_JSON_BYTES).await?;
         let text = value["choices"][0]["message"]["content"]
             .as_str()
             .ok_or(AdapterError::ProcessFailed)?;
+        if text.len() > MAX_RESPONSE_TEXT_BYTES {
+            return Err(AdapterError::OutputTooLarge);
+        }
         Ok(NormalizedResponse {
             text: text.to_owned(),
             provider_session_id: None,
@@ -222,8 +241,8 @@ impl Adapter for HttpProvider {
             let mut metadata = ResponseMetadata::default();
             while let Some(chunk) = bytes.next().await {
                 let chunk = chunk.map_err(|_| AdapterError::ProviderUnavailable)?;
+                if chunk.len() > (1024_usize * 1024).saturating_sub(buffer.len()) { Err(AdapterError::OutputTooLarge)?; }
                 buffer.extend_from_slice(&chunk);
-                if buffer.len() > 1024 * 1024 { Err(AdapterError::ProcessFailed)?; }
                 while let Some((end, separator_len)) = frame_end(&buffer) {
                     let frame: Vec<u8> = buffer.drain(..end + separator_len).collect();
                     let text = std::str::from_utf8(&frame).map_err(|_| AdapterError::ProcessFailed)?;
@@ -364,5 +383,86 @@ mod capability_tests {
         );
         assert_eq!(disabled.temperature.support, Support::Unsupported);
         assert_eq!(disabled.max_tokens.support, Support::Unknown);
+    }
+}
+
+#[cfg(test)]
+mod body_limit_tests {
+    use super::*;
+    use axum::{
+        body::{Body, Bytes},
+        http::Response,
+        routing::{get, post},
+        Json, Router,
+    };
+    use std::future::IntoFuture;
+    #[tokio::test]
+    async fn bounded_json_rejects_declared_and_chunked_oversize_before_copying() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(
+            axum::serve(
+                listener,
+                Router::new()
+                    .route("/small", get(|| async { "{}" }))
+                    .route("/declared", get(|| async { "x".repeat(2048) }))
+                    .route(
+                        "/chunked",
+                        get(|| async {
+                            Response::builder()
+                                .body(Body::from_stream(futures_util::stream::iter([Ok::<
+                                    _,
+                                    std::io::Error,
+                                >(
+                                    Bytes::from(vec![b'x'; 2048]),
+                                )])))
+                                .unwrap()
+                        }),
+                    ),
+            )
+            .into_future(),
+        );
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        assert_eq!(
+            bounded_json(client.get(format!("{base}/small")).send().await.unwrap(), 4)
+                .await
+                .unwrap(),
+            serde_json::json!({})
+        );
+        for route in ["declared", "chunked"] {
+            assert!(matches!(
+                bounded_json(
+                    client.get(format!("{base}/{route}")).send().await.unwrap(),
+                    1024
+                )
+                .await,
+                Err(AdapterError::OutputTooLarge)
+            ));
+        }
+        server.abort();
+    }
+    #[tokio::test]
+    async fn http_nonstream_text_cannot_bypass_the_gateway_output_limit() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(axum::serve(listener, Router::new()
+            .route("/models", get(|| async { Json(serde_json::json!({"data":[{"id":"model"}]})) }))
+            .route("/chat/completions", post(|| async { Json(serde_json::json!({"choices":[{"message":{"content":"x".repeat(MAX_RESPONSE_TEXT_BYTES+1)}}]})) }))
+        ).into_future());
+        let provider =
+            HttpProvider::new("fixture", base, SecretString::from("synthetic".to_string()))
+                .unwrap();
+        provider.list_models().await.unwrap();
+        let result = provider
+            .invoke(NormalizedRequest {
+                cli_idle_timeout: crate::cli::CLI_IDLE_TIMEOUT,
+                model: "fixture/model".into(),
+                prompt: "fixture".into(),
+                messages: vec![],
+                parameters: Default::default(),
+            })
+            .await;
+        assert!(matches!(result, Err(AdapterError::OutputTooLarge)));
+        server.abort();
     }
 }
