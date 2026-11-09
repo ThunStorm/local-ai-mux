@@ -110,3 +110,28 @@ async fn headless_cli_error_result_preserves_first_payload_timeout() {
         layer: TimeoutLayer::UpstreamFirstPayload, limit
     }) if limit == std::time::Duration::from_secs(120)));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn headless_cli_recovers_explicit_stderr_timeout_and_ignores_null_error() {
+    use localmux_adapter_sdk::{Adapter, AdapterError, NormalizedRequest, TimeoutLayer};
+    let adapter = localmux_adapter_qoder::QoderAdapter::new(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/qoder.sh"),
+    );
+    let request = |prompt: &str| NormalizedRequest {
+        cli_idle_timeout: std::time::Duration::from_secs(600),
+        model: "qoder/current-model".into(),
+        prompt: prompt.into(),
+        messages: Vec::new(),
+        parameters: Default::default(),
+    };
+    assert!(
+        matches!(adapter.invoke(request("first-payload-stderr")).await,
+        Err(AdapterError::TimeoutAt { layer: TimeoutLayer::UpstreamFirstPayload, limit })
+        if limit == std::time::Duration::from_secs(120))
+    );
+    assert_eq!(
+        adapter.invoke(request("null-error")).await.unwrap().text,
+        "ok"
+    );
+}

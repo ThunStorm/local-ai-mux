@@ -134,16 +134,101 @@ pub async fn stream_json(
         return Err(AdapterError::ProviderUnavailable);
     }
     let command = Command::new(executable);
-    stream_json_command(command, args, prompt, idle_timeout, parse_delta, map_error).await
+    stream_json_inner(
+        command,
+        args,
+        prompt,
+        idle_timeout,
+        parse_delta,
+        map_error,
+        true,
+    )
+    .await
 }
 
 pub async fn stream_json_command(
+    command: Command,
+    args: &[String],
+    prompt: String,
+    idle_timeout: Duration,
+    parse_delta: fn(&Value) -> Option<String>,
+    map_error: fn(&Value) -> AdapterError,
+) -> Result<(EventStream, Arc<Mutex<Option<String>>>), AdapterError> {
+    stream_json_inner(
+        command,
+        args,
+        prompt,
+        idle_timeout,
+        parse_delta,
+        map_error,
+        false,
+    )
+    .await
+}
+
+struct StderrTail {
+    bytes: Arc<std::sync::Mutex<Vec<u8>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl StderrTail {
+    const TAIL_BYTES: usize = 8 * 1024;
+
+    fn capture(mut stderr: tokio::process::ChildStderr) -> Self {
+        let bytes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let tail = bytes.clone();
+        let task = tokio::spawn(async move {
+            let mut buffer = [0; 4096];
+            while let Ok(size @ 1..) = stderr.read(&mut buffer).await {
+                let mut tail = tail.lock().unwrap();
+                let discard = (tail.len() + size).saturating_sub(Self::TAIL_BYTES);
+                tail.drain(..discard);
+                tail.extend_from_slice(&buffer[..size]);
+            }
+        });
+        Self { bytes, task }
+    }
+
+    fn classify(
+        &self,
+        fallback: AdapterError,
+        map_error: fn(&Value) -> AdapterError,
+    ) -> AdapterError {
+        if !matches!(fallback, AdapterError::ProcessFailed) {
+            return fallback;
+        }
+        let bytes = self.bytes.lock().unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        // At capacity, the first line may begin mid-message.
+        let text = if bytes.len() == Self::TAIL_BYTES {
+            text.split_once('\n').map_or("", |(_, rest)| rest)
+        } else {
+            &text
+        };
+        for line in text.lines().rev() {
+            let kind = map_error(&Value::String(line.to_owned()));
+            if matches!(kind, AdapterError::TimeoutAt { .. }) {
+                return kind;
+            }
+        }
+        fallback
+    }
+}
+
+impl Drop for StderrTail {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn stream_json_inner(
     mut command: Command,
     args: &[String],
     prompt: String,
     idle_timeout: Duration,
     parse_delta: fn(&Value) -> Option<String>,
     map_error: fn(&Value) -> AdapterError,
+    capture_stderr: bool,
 ) -> Result<(EventStream, Arc<Mutex<Option<String>>>), AdapterError> {
     let dir = tempfile::tempdir().map_err(|_| AdapterError::ProcessFailed)?;
     command
@@ -151,9 +236,14 @@ pub async fn stream_json_command(
         .current_dir(dir.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(if capture_stderr {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     let mut child = crate::process::OwnedChild::spawn(command)
         .map_err(|_| AdapterError::ProviderUnavailable)?;
+    let mut stderr = child.stderr.take().map(StderrTail::capture);
     let mut stdin = child.stdin.take().ok_or(AdapterError::ProcessFailed)?;
     stdin
         .write_all(prompt.as_bytes())
@@ -172,17 +262,24 @@ pub async fn stream_json_command(
         loop {
             let Some(value) = read_json_line_with_timeout(&mut reader, idle_timeout, crate::TimeoutLayer::CliIdle).await? else { break; };
             if let Some(id) = value["session_id"].as_str().or_else(|| value["sessionId"].as_str()) { *shared.lock().await = Some(id.to_owned()); }
-            if let Some(error) = value.get("error") { Err(map_error(error))?; }
+            if let Some(error) = value.get("error").filter(|error| !error.is_null() && **error != false) {
+                let kind = map_error(error);
+                Err(kind)?;
+            } else if value["type"] == "error" {
+                let kind = map_error(&value);
+                Err(kind)?;
+            }
             if let Some(delta) = parse_delta(&value) { saw_delta = true; yield StreamEvent::Delta(delta); }
             if value["type"] == "result" {
                 if value["is_error"] == true || value["subtype"].as_str().is_some_and(|s| s.starts_with("error")) {
                     // Classify in memory only; never persist the result text or credentials.
                     let kind = map_error(&value);
-                    Err(if matches!(kind, AdapterError::TimeoutAt { .. }) {
+                    let kind = if matches!(kind, AdapterError::TimeoutAt { .. }) {
                         kind
                     } else {
                         classify_cli_failure(value.to_string().as_bytes(), b"")
-                    })?;
+                    };
+                    Err(kind)?;
                 }
                 if metadata.is_some() { Err(AdapterError::ProcessFailed)?; }
                 // CLI result alone does not certify model stop, per-request usage or actual route.
@@ -191,7 +288,16 @@ pub async fn stream_json_command(
             }
         }
         let status = timeout(Duration::from_secs(5), child.wait()).await.map_err(|_| AdapterError::TimeoutAt { layer: crate::TimeoutLayer::CliExit, limit: Duration::from_secs(5) })?.map_err(|_| AdapterError::ProcessFailed)?;
-        if !status.success() { Err(AdapterError::ProcessFailed)?; }
+        if !status.success() || metadata.is_none() {
+            let mut kind = AdapterError::ProcessFailed;
+            if !saw_delta && final_text.is_empty() {
+                if let Some(tail) = &mut stderr {
+                    let _ = timeout(Duration::from_millis(100), &mut tail.task).await;
+                    kind = tail.classify(kind, map_error);
+                }
+            }
+            Err(kind)?;
+        }
         if !saw_delta && !final_text.is_empty() { yield StreamEvent::Delta(final_text); }
     let metadata = metadata.ok_or(AdapterError::ProcessFailed)?;
         yield StreamEvent::Completed(metadata);

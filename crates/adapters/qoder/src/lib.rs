@@ -326,8 +326,9 @@ fn map_error(value: &Value) -> AdapterError {
     let result = value["result"].as_str().unwrap_or("");
     let error = &value["error"];
     for candidate in [message, result, error["message"].as_str().unwrap_or("")] {
-        if let Some(seconds) = candidate
-            .trim()
+        let text = candidate.trim();
+        let text = text.strip_prefix("Error: ").unwrap_or(text);
+        if let Some(seconds) = text
             .strip_prefix("Model stream timed out before first payload after ")
             .and_then(|text| text.split_once("s without stream data"))
             .and_then(|(seconds, _)| seconds.parse::<u64>().ok())

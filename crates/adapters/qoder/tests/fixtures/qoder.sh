@@ -19,6 +19,12 @@ case "$prompt" in
   first-payload-timeout|timeout-a)
     printf '%s\n' '{"type":"result","is_error":true,"result":"Model stream timed out before first payload after 120s without stream data (total 122s)"}'
     exit 1 ;;
+  first-payload-stderr)
+    printf '%s\n' 'Error: Model stream timed out before first payload after 120s without stream data (total 122s)' >&2
+    exit 1 ;;
+  null-error)
+    printf '%s\n' '{"type":"result","error":null,"result":"ok"}'
+    exit 0 ;;
   already-done|rejected-b)
     printf '%s\n' '{"type":"result","result":"{\"section_facts\":[],\"places\":[],\"warnings\":[]}"}'
     exit 0 ;;

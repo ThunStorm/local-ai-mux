@@ -32,3 +32,7 @@ Gateway 返回 HTTP 状态与 OpenAI 风格 `{"error":{"message","type","code","
 Qoder CLI 明确报告首包超时时，返回 504 `LMX_PROCESS_TIMEOUT`，原因 `upstream_first_payload_timeout`，层 `upstream_first_payload`，时限以 `timeout_limit_ms` 表示。SSE 已开始时在失败帧携带同一组字段。无法确认的 CLI 错误保留通用分类，上游执行与用量保持未知。
 
 连接冷却返回 503 `LMX_PROVIDER_COOLDOWN`，HTTP `Retry-After` 为实际剩余时间向上取整的秒数。错误体的 `upstream_dispatched=false` 表示本次未进入 Adapter 推理，`cooldown_reason` 区分 `transient_failure`、`rate_limited`、`quota_exhausted`。调用方可据此安排恢复，Gateway 不自动重发。
+
+### CLI stderr 诊断补充
+
+真实视频重跑中，Qoder 内部会话记录了首包超时，但公开接口返回通用 502。此前 CLI 流式调用丢弃 stderr，无法使用该通道上可能存在的明确错误。Qoder 路径现在异步排空 stderr，仅在内存保留最近 8 KiB。若 CLI 结束失败且未产出正文，按固定首包签名识别，未知错误仍返回通用 502。空的 JSON error 字段不再中止正常结果。成功请求、重试策略与上游调用次数均沿用原路径。子进程夹具验证 stdout、stderr 与空 error 字段，真实样本能否由此获得明确归因待观察。
