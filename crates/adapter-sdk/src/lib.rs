@@ -416,6 +416,7 @@ pub enum TimeoutLayer {
     GatewayStreamIdle,
     GatewayOverall,
     ProviderHttp,
+    UpstreamFirstPayload,
 }
 impl TimeoutLayer {
     pub fn code(self) -> &'static str {
@@ -428,6 +429,7 @@ impl TimeoutLayer {
             Self::GatewayStreamIdle => "gateway_stream_idle",
             Self::GatewayOverall => "gateway_overall",
             Self::ProviderHttp => "provider_http",
+            Self::UpstreamFirstPayload => "upstream_first_payload",
         }
     }
     pub fn limiting_layer(self) -> &'static str {

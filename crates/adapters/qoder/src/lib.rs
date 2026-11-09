@@ -319,7 +319,27 @@ fn parse_delta(value: &Value) -> Option<String> {
     }
 }
 fn map_error(value: &Value) -> AdapterError {
-    let message = value["message"].as_str().unwrap_or("").to_ascii_lowercase();
+    let message = value
+        .as_str()
+        .or_else(|| value["message"].as_str())
+        .unwrap_or("");
+    let result = value["result"].as_str().unwrap_or("");
+    let error = &value["error"];
+    for candidate in [message, result, error["message"].as_str().unwrap_or("")] {
+        if let Some(seconds) = candidate
+            .trim()
+            .strip_prefix("Model stream timed out before first payload after ")
+            .and_then(|text| text.split_once("s without stream data"))
+            .and_then(|(seconds, _)| seconds.parse::<u64>().ok())
+            .filter(|seconds| (1..=3600).contains(seconds))
+        {
+            return AdapterError::TimeoutAt {
+                layer: localmux_adapter_sdk::TimeoutLayer::UpstreamFirstPayload,
+                limit: std::time::Duration::from_secs(seconds),
+            };
+        }
+    }
+    let message = message.to_ascii_lowercase();
     if message.contains("auth") || message.contains("login") {
         AdapterError::AuthRequired
     } else if message.contains("rate") {
@@ -333,6 +353,23 @@ fn map_error(value: &Value) -> AdapterError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_explicit_first_payload_errors_report_the_upstream_timeout() {
+        let error = "Model stream timed out before first payload after 120s without stream data (total 122s)";
+        for value in [
+            serde_json::json!({"message":error}),
+            serde_json::json!({"type":"result","is_error":true,"result":error}),
+        ] {
+            assert!(matches!(map_error(&value), AdapterError::TimeoutAt {
+                layer: localmux_adapter_sdk::TimeoutLayer::UpstreamFirstPayload, limit
+            } if limit == std::time::Duration::from_secs(120)));
+        }
+        assert!(matches!(
+            map_error(&serde_json::json!({"message":"Unknown timeout"})),
+            AdapterError::ProcessFailed
+        ));
+    }
+
     #[test]
     fn only_explicit_catalog_entries_are_models() {
         let data = serde_json::json!({"models":[{"id":"auto"},{"value":"efficient"},{"value":"disabled","isEnabled":false},{"name":"not-an-id"}]});

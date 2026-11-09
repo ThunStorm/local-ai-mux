@@ -137,6 +137,9 @@ async fn context(
             &state.breaker,
             Instant::now(),
         ) {
+            if let Some(response) = super::connection_cooldown(state, adapter.id()) {
+                return Err(Box::new(response));
+            }
             if store {
                 let _ = localmux_storage::record_run_event(
                     &state.pool,

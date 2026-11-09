@@ -34,9 +34,25 @@ pub enum RouteError {
     #[error("no eligible route")]
     NoEligibleRoute,
 }
+#[derive(Clone, Copy)]
+pub enum CooldownReason {
+    TransientFailure,
+    RateLimited,
+    QuotaExhausted,
+}
+impl CooldownReason {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::TransientFailure => "transient_failure",
+            Self::RateLimited => "rate_limited",
+            Self::QuotaExhausted => "quota_exhausted",
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct CircuitBreaker {
-    open_until: Mutex<HashMap<String, Instant>>,
+    open_until: Mutex<HashMap<String, (Instant, CooldownReason)>>,
 }
 impl CircuitBreaker {
     pub fn open_count(&self, now: Instant) -> usize {
@@ -44,21 +60,43 @@ impl CircuitBreaker {
             .lock()
             .expect("breaker lock")
             .values()
-            .filter(|until| now < **until)
+            .filter(|(until, _)| now < *until)
             .count()
     }
     pub fn available(&self, connection_id: &str, now: Instant) -> bool {
+        self.cooldown(connection_id, now).is_none()
+    }
+    pub fn cooldown(
+        &self,
+        connection_id: &str,
+        now: Instant,
+    ) -> Option<(Duration, CooldownReason)> {
         self.open_until
             .lock()
             .expect("breaker lock")
             .get(connection_id)
-            .is_none_or(|until| now >= *until)
+            .filter(|(until, _)| now < *until)
+            .map(|(until, reason)| (*until - now, *reason))
     }
     pub fn open(&self, connection_id: &str, now: Instant, duration: Duration) {
+        self.open_with_reason(
+            connection_id,
+            now,
+            duration,
+            CooldownReason::TransientFailure,
+        );
+    }
+    pub fn open_with_reason(
+        &self,
+        connection_id: &str,
+        now: Instant,
+        duration: Duration,
+        reason: CooldownReason,
+    ) {
         self.open_until
             .lock()
             .expect("breaker lock")
-            .insert(connection_id.to_owned(), now + duration);
+            .insert(connection_id.to_owned(), (now + duration, reason));
     }
     pub fn success(&self, connection_id: &str) {
         self.open_until

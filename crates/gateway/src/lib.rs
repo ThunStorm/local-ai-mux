@@ -23,7 +23,7 @@ use localmux_api_types::{
 };
 use localmux_domain::{AdapterKind, CostMode, HealthStatus, ModelDescriptor};
 use localmux_quota::{QuotaRegistry, QuotaSnapshot};
-use localmux_router::{CircuitBreaker, RouteCandidate, RouteError, RoutePolicy};
+use localmux_router::{CircuitBreaker, CooldownReason, RouteCandidate, RouteError, RoutePolicy};
 use localmux_security::{KeyRateLimiter, KeyRestrictions};
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
@@ -747,16 +747,21 @@ fn breaker_error(state: &GatewayState, adapter_id: &str, kind: &AdapterError) {
         });
     }
     let duration = match kind {
-        AdapterError::RateLimited => Some(Duration::from_secs(60)),
-        AdapterError::QuotaExhausted => Some(Duration::from_secs(300)),
+        AdapterError::RateLimited => Some((60, CooldownReason::RateLimited)),
+        AdapterError::QuotaExhausted => Some((300, CooldownReason::QuotaExhausted)),
         AdapterError::ProviderUnavailable
         | AdapterError::ProcessFailed
         | AdapterError::Timeout
-        | AdapterError::TimeoutAt { .. } => Some(Duration::from_secs(30)),
+        | AdapterError::TimeoutAt { .. } => Some((30, CooldownReason::TransientFailure)),
         _ => None,
     };
-    if let Some(duration) = duration {
-        state.breaker.open(adapter_id, Instant::now(), duration);
+    if let Some((seconds, reason)) = duration {
+        state.breaker.open_with_reason(
+            adapter_id,
+            Instant::now(),
+            Duration::from_secs(seconds),
+            reason,
+        );
     }
 }
 async fn chat(
@@ -1018,7 +1023,7 @@ async fn chat_inner(
             &state.breaker,
             Instant::now(),
         ) {
-            return route_error(kind);
+            return connection_cooldown(&state, &adapter_id).unwrap_or_else(|| route_error(kind));
         }
     }
     let normalized = NormalizedRequest {
@@ -1266,13 +1271,23 @@ fn wire_metadata(
     })
 }
 fn connection_cooldown(state: &GatewayState, adapter_id: &str) -> Option<Response> {
-    (!state.breaker.available(adapter_id, Instant::now())).then(|| {
-        error(
+    let (remaining, reason) = state.breaker.cooldown(adapter_id, Instant::now())?;
+    let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0);
+    Some(
+        (
             StatusCode::SERVICE_UNAVAILABLE,
-            "LMX_PROVIDER_COOLDOWN",
-            "Provider is temporarily cooling down; retry manually later",
+            [("Retry-After", seconds.to_string())],
+            Json(serde_json::json!({"error": {
+                "message": "Provider is temporarily cooling down; retry manually later",
+                "type": "localmux_error",
+                "code": "LMX_PROVIDER_COOLDOWN",
+                "error_code": "LMX_PROVIDER_COOLDOWN",
+                "upstream_dispatched": false,
+                "cooldown_reason": reason.code()
+            }})),
         )
-    })
+            .into_response(),
+    )
 }
 fn timeout_fields(kind: &AdapterError) -> Option<serde_json::Value> {
     match kind {

@@ -89,3 +89,24 @@ async fn cn_bridge_uses_its_own_model_identity_with_leading_system() {
     assert_eq!(response.text, "first second");
     assert!(response.metadata.actual_model.is_none());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn headless_cli_error_result_preserves_first_payload_timeout() {
+    use localmux_adapter_sdk::{Adapter, AdapterError, NormalizedRequest, TimeoutLayer};
+    let adapter = localmux_adapter_qoder::QoderAdapter::new(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/qoder.sh"),
+    );
+    let result = adapter
+        .invoke(NormalizedRequest {
+            cli_idle_timeout: std::time::Duration::from_secs(600),
+            model: "qoder/current-model".into(),
+            prompt: "first-payload-timeout".into(),
+            messages: Vec::new(),
+            parameters: Default::default(),
+        })
+        .await;
+    assert!(matches!(result, Err(AdapterError::TimeoutAt {
+        layer: TimeoutLayer::UpstreamFirstPayload, limit
+    }) if limit == std::time::Duration::from_secs(120)));
+}

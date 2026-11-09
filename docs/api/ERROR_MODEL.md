@@ -25,3 +25,10 @@ Gateway 返回 HTTP 状态与 OpenAI 风格 `{"error":{"message","type","code","
 
 
 2026-10-21：CLI/Gateway 超时保留 LMX_PROCESS_TIMEOUT，新增固定词表 timeout_layer 和实际 timeout_limit_ms；未知来源不再默认归为 overall_deadline。Chat/Responses、流/非流及新调用诊断保持同源，具体层和边界见 [CLI 限时](STREAMING.md#cli-空闲限时与超时归因2026-10-21)。
+
+
+## 首包超时与连接冷却
+
+Qoder CLI 明确报告首包超时时，返回 504 `LMX_PROCESS_TIMEOUT`，原因 `upstream_first_payload_timeout`，层 `upstream_first_payload`，时限以 `timeout_limit_ms` 表示。SSE 已开始时在失败帧携带同一组字段。无法确认的 CLI 错误保留通用分类，上游执行与用量保持未知。
+
+连接冷却返回 503 `LMX_PROVIDER_COOLDOWN`，HTTP `Retry-After` 为实际剩余时间向上取整的秒数。错误体的 `upstream_dispatched=false` 表示本次未进入 Adapter 推理，`cooldown_reason` 区分 `transient_failure`、`rate_limited`、`quota_exhausted`。调用方可据此安排恢复，Gateway 不自动重发。

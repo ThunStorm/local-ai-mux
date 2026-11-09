@@ -5,7 +5,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use localmux_adapter_sdk::{
-    Adapter, AdapterError, NormalizedRequest, NormalizedResponse, NormalizedStream,
+    Adapter, AdapterError, NormalizedRequest, NormalizedResponse, NormalizedStream, TimeoutLayer,
 };
 use localmux_domain::{AdapterKind, ChatCapabilities, CostMode, HealthStatus, ModelDescriptor};
 use localmux_gateway::{router, GatewayState};
@@ -47,6 +47,12 @@ impl Adapter for DiagnosticAdapter {
     }
     async fn invoke(&self, request: NormalizedRequest) -> Result<NormalizedResponse, AdapterError> {
         self.0.fetch_add(1, Ordering::SeqCst);
+        if request.prompt == "first-payload-timeout" {
+            return Err(AdapterError::TimeoutAt {
+                layer: TimeoutLayer::UpstreamFirstPayload,
+                limit: Duration::from_secs(120),
+            });
+        }
         if request.prompt == "extended" {
             assert_eq!(request.cli_idle_timeout, Duration::from_secs(1200));
         }
@@ -190,10 +196,18 @@ async fn stream_failure_cools_connection_without_claiming_its_models_disappeared
     ] {
         let response = app.clone().oneshot(post(&key, path, body)).await.unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let delay: u64 = response.headers()["retry-after"]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((1..=30).contains(&delay));
         let body: serde_json::Value =
             serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes())
                 .unwrap();
         assert_eq!(body["error"]["code"], "LMX_PROVIDER_COOLDOWN");
+        assert_eq!(body["error"]["upstream_dispatched"], false);
+        assert_eq!(body["error"]["cooldown_reason"], "transient_failure");
     }
     assert_eq!(
         calls.load(Ordering::SeqCst),
@@ -523,4 +537,31 @@ async fn configured_twenty_minute_budget_allows_fifteen_minute_agent_results() {
             assert_eq!(state.active_tasks(), 0);
         }
     }
+}
+
+#[tokio::test]
+async fn first_payload_timeout_retains_its_layer_and_limit() {
+    let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+    state
+        .register(Arc::new(DiagnosticAdapter(
+            Arc::new(AtomicUsize::new(0)),
+            AdapterKind::Provider,
+            Arc::new(AtomicUsize::new(0)),
+        )))
+        .await;
+    let (_, key) = state.create_key(&["chat:invoke"]).await.unwrap();
+    let mut body = chat("first-payload-timeout", "diagnostic/luna");
+    body["stream"] = false.into();
+    let response = router(state)
+        .oneshot(post(&key, "/v1/chat/completions", body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let error = &body["error"];
+    assert_eq!(error["code"], "LMX_PROCESS_TIMEOUT");
+    assert_eq!(error["reason_code"], "upstream_first_payload_timeout");
+    assert_eq!(error["timeout_limit_ms"], 120_000);
+    assert!(error.get("upstream_dispatched").is_none());
 }

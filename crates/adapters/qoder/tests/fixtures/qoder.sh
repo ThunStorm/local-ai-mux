@@ -12,6 +12,17 @@ case "$*" in *"--setting-sources "*) ;; *) exit 3 ;; esac
 case "$*" in *"--system-prompt "*) case "$*" in *"one"*"two"*) ;; *) exit 3 ;; esac ;; esac
 IFS= read -r prompt || true
 [ -n "$prompt" ] || exit 4
+if [ -n "${LOCALMUX_TEST_QODER_DISPATCH_LOG:-}" ]; then
+  printf '%s\n' "$prompt" >> "$LOCALMUX_TEST_QODER_DISPATCH_LOG"
+fi
+case "$prompt" in
+  first-payload-timeout|timeout-a)
+    printf '%s\n' '{"type":"result","is_error":true,"result":"Model stream timed out before first payload after 120s without stream data (total 122s)"}'
+    exit 1 ;;
+  already-done|rejected-b)
+    printf '%s\n' '{"type":"result","result":"{\"section_facts\":[],\"places\":[],\"warnings\":[]}"}'
+    exit 0 ;;
+esac
 printf '%s\n' '{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"first "}}}'
 printf '%s\n' '{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"second"}}}'
 printf '%s\n' '{"type":"result","result":"first second","session_id":"qoder-fixture-session"}'

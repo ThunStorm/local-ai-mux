@@ -177,7 +177,12 @@ pub async fn stream_json_command(
             if value["type"] == "result" {
                 if value["is_error"] == true || value["subtype"].as_str().is_some_and(|s| s.starts_with("error")) {
                     // Classify in memory only; never persist the result text or credentials.
-                    Err(classify_cli_failure(value.to_string().as_bytes(), b""))?;
+                    let kind = map_error(&value);
+                    Err(if matches!(kind, AdapterError::TimeoutAt { .. }) {
+                        kind
+                    } else {
+                        classify_cli_failure(value.to_string().as_bytes(), b"")
+                    })?;
                 }
                 if metadata.is_some() { Err(AdapterError::ProcessFailed)?; }
                 // CLI result alone does not certify model stop, per-request usage or actual route.

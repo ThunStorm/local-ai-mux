@@ -1,5 +1,9 @@
 # LocalAiMux 当前交接
 
+## 首包超时与连接冷却
+
+已实现[超时与冷却契约](api/ERROR_MODEL.md#首包超时与连接冷却)。Gateway、Qoder CLI fixture 与至简隔离 SQLite 通过回环 HTTP 验证首包超时、冷却拦截零派发和到期续跑。现有连接限时与串行规则保持。源码已离线验证，实机 Qoder 公开错误形状与安装后的运行待验收。
+
 ## 封版后CI维护
 
 2026-10-26：用户所报Windows17分6秒失败为dec15ee的临时DB删除OS32共享冲突；1d0f031虽通过，同实现仍有清理偶发性。已将六个文件型存储测试隔离到tempdir、重开前释放旧池、关闭后仅对Windows OS32/33限时清理重试，并新增真实删除锁Windows回归。本机storage13/13与全仓Clippy通过；远端结果以维护提交对应CI为准；Windows存储回归已前移，完整workspace检查保留。仅cfg(test)/开发依赖/文档变化，生产数据路径与API行为不变，不重启服务、不移动v0.2.0标签。详情见[CI维护](development/CI.md#封版后windows存储测试维护2026-10-26)。
