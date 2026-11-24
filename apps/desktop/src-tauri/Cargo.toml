@@ -1,0 +1,62 @@
+[package]
+name = "localmux-desktop"
+version.workspace = true
+description = "LocalAiMux desktop shell"
+authors = ["LocalAiMux contributors"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "localmux_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-updater = "2"
+localmux-core = { path = "../../../crates/core" }
+localmux-api-types = { path = "../../../crates/api-types" }
+localmux-adapter-codex = { path = "../../../crates/adapters/codex" }
+localmux-adapter-qoder = { path = "../../../crates/adapters/qoder" }
+localmux-adapter-codebuddy = { path = "../../../crates/adapters/codebuddy" }
+localmux-adapter-sdk = { path = "../../../crates/adapter-sdk" }
+localmux-discovery = { path = "../../../crates/discovery" }
+localmux-gateway = { path = "../../../crates/gateway" }
+localmux-quota = { path = "../../../crates/quota" }
+localmux-router = { path = "../../../crates/router" }
+localmux-security = { path = "../../../crates/security" }
+localmux-secrets = { path = "../../../crates/secrets" }
+localmux-storage = { path = "../../../crates/storage" }
+localmux-telemetry = { path = "../../../crates/telemetry" }
+tracing = "0.1"
+tokio = { version = "1", features = ["net", "process", "rt", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+secrecy = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+tempfile = "3"
+tauri-plugin-dialog = "2"
+rust_xlsxwriter = "0.101.0"
+time = { version = "0.3", features = ["formatting"] }
+
+sqlx = { version = "=0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }
+sha2 = "0.10"
+libsqlite3-sys = "=0.30.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSGlassEffectView", "NSView", "NSColor", "NSWorkspace", "NSAccessibility", "NSResponder", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+axum = "0.8"
+zip = { version = "4", default-features = false, features = ["deflate"] }

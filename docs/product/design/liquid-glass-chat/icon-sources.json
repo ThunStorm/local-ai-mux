@@ -1,0 +1,77 @@
+{
+  "date": "2026-10-09",
+  "policy": "Original software icons; shared CSS size/padding/surface only. No generated vendor illustrations in production.",
+  "selected_app_icon": "apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-wave-sun-negative.png; user-selected option 04, dark-blue wave with red sun; Tauri CLI exports",
+  "software": [
+    {
+      "id": "codex",
+      "source": "icon-codex-light.png",
+      "source_sha256": "de7d43f3386105ab20952958c2c25beb0d903e2aeb6e1aef57c49a648c0d1c07",
+      "output": "apps/desktop/public/software-icons/codex.png",
+      "output_sha256": "605861f74bb8e9327d1fbf0a2c54b3d3fa62e952b81528464c206bc1452263e4",
+      "method": "Original installed application/CLI asset; sips resize/export only; no recolor or redraw"
+    },
+    {
+      "id": "qoder",
+      "source": "icon.icns",
+      "source_sha256": "09eb23fb9d9f30cca6e02c7c93379fe515c222d71d4ef23324366b66863cc29a",
+      "output": "apps/desktop/public/software-icons/qoder.png",
+      "output_sha256": "eeef80db64188bc998a089f531e89f6ec3c742e3fae316c2d0f3782ce8ddd659",
+      "method": "Original installed application/CLI asset; sips resize/export only; no recolor or redraw"
+    },
+    {
+      "id": "qoder-cn",
+      "source": "icon.icns",
+      "source_sha256": "f77d6a3df8fc243313061ff07fd8f77cb04eca18bb230c1ecb074fc516ef8b2f",
+      "output": "apps/desktop/public/software-icons/qoder-cn.png",
+      "output_sha256": "6eea6f4cb968c7207ff7b6b4416f43a1dd0dda8df7a1f190713f1c895bd81549",
+      "method": "Original installed application/CLI asset; sips resize/export only; no recolor or redraw"
+    },
+    {
+      "id": "mimo",
+      "source": "icon.icns",
+      "source_sha256": "3e73bababcb167c8331aecd2a63683685a3558dd8c39714e1152f2652de06900",
+      "output": "apps/desktop/public/software-icons/mimo.png",
+      "output_sha256": "3c31fd0ad53d68cc668383442864515c45a40decdeea089e297574771c01c018",
+      "method": "Original installed application/CLI asset; sips resize/export only; no recolor or redraw"
+    },
+    {
+      "id": "workbuddy",
+      "source": "icon.icns",
+      "source_sha256": "222fd607a9dadd54252724c44123acca508a5da9d419b7d6cc19dc539c0fe134",
+      "output": "apps/desktop/public/software-icons/workbuddy.png",
+      "output_sha256": "126fd8009d2ae055cd822e29d5de48379a6dacb19adb80fb0ff5fd063efb8deb",
+      "method": "Original installed application/CLI asset; sips resize/export only; no recolor or redraw"
+    },
+    {
+      "id": "codebuddy",
+      "source": "icon.png",
+      "source_sha256": "3628c1891ff84443439bb1905b81a816367b3e994e9de4ee4a3baeb0bc9ab314",
+      "output": "apps/desktop/public/software-icons/codebuddy.png",
+      "output_sha256": "6c2287b8e06661043a7f88e5ba918f5fc1d667f158904820cc01bafd290f9b84",
+      "method": "Original installed application/CLI asset; sips resize/export only; no recolor or redraw"
+    }
+  ],
+  "missing": [
+    "CodeBuddy CN desktop is not installed; neutral named CLI fallback rather than substituting another product icon"
+  ],
+  "historical_illustrations": "docs/product/design/liquid-glass-chat/icons/ retained only as history; superseded",
+  "app_icon": {
+    "source": "apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-wave-sun-negative.png",
+    "source_sha256": "a48f50ee2ecb39adad1fa4726e02ddaec539b593fb8d489dd7228d5afaf0ff53",
+    "method": "Tauri CLI icon export from the selected original PNG; no redraw or recolor",
+    "webview": "apps/desktop/public/localmux.png",
+    "webview_sha256": "4fdf853389269ad76aed478e733542ebb1a51b7cdd0fb4c3d2d80ee34c5655e3",
+    "icns_sha256": "2f39d42cf3772aa6b1f213aa90f02c1f15a47d2fb4b722a3c51e83b5c98d1ff9",
+    "previous_source": "docs/product/design/liquid-glass-chat/icons/localmux-2026-10-05.svg",
+    "tray": {
+      "source": "apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-tray-template-source.png",
+      "output": "apps/desktop/src-tauri/icons/tray-template.png",
+      "output_sha256": "9d58f4d208582ee1205a4dca2287ecfba32aff5230f4a5c5f07bd6e883b2d6df",
+      "method": "ImageGen transparent monochrome cutout; sips resize only; macOS template icon; other platforms retain the full app icon",
+      "running_state": "macOS: white wave with red [235,36,32] detached sun; original alpha preserved; non-template rendering",
+      "stopped_state": "original monochrome system template",
+      "refresh": "shared API status poll, up to 2 seconds; update only after state changes"
+    }
+  }
+}

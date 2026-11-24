@@ -1,0 +1,181 @@
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { localTimeRange, exportError } from "./call-filter";
+import { timeoutLayerLabel } from "./ExecutionLimits";
+import { cacheUsage, type CacheDiagnostics } from "./cache-usage";
+
+type Diagnostics = CacheDiagnostics & { timeout_layer?: string | null; timeout_limit_ms?: number | null; cli_idle_timeout_seconds?: number | null; auth_route_ms: number | null; queue_wait_ms: number | null; interval_wait_ms: number | null; adapter_ms: number | null; adapter_startup_ms: number | null; first_output_ms: number | null; total_elapsed_ms: number | null; model_execution_ms: number | null; response_finalize_ms: number | null; usage_source: string | null; usage_scope: string | null; finish_source: string | null; normalization: string | null; outcome: string | null; reason_code: string | null; request_bytes: number | null; response_bytes: number | null; response_bytes_scope: string | null; body_recording_enabled: boolean | null; cancel_requested: boolean; upstream_cancel_verified: string | null };
+type Record = { request_id?: string | null; diagnostics?: Diagnostics | null; sequence: number; id: string; source: string; endpoint: string; requested_model: string; resolved_model: string | null; adapter_id: string | null; response_id: string | null; conversation_id: string | null; streamed: boolean; started_at: number; finished_at: number | null; elapsed_ms: number | null; status: string; error_code: string | null; finish_reason: string | null; actual_model: string | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null };
+const states = ["in_progress", "completed", "failed", "timeout", "cancelled", "truncated", "filtered", "interrupted"];
+const zhStates = ["运行中", "已完成", "失败", "超时", "已取消", "已截断", "内容过滤", "异常中断"];
+const sources = ["api", "playground", "model_test"];
+const zhSources = ["外部 API", "桌面试对话", "模型短测试"];
+
+export default function CallRecords({ locale }: { locale: "zh" | "en" }) {
+  const zh = locale === "zh";
+  const [recording, setRecording] = useState<boolean | null>(null);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingError, setRecordingError] = useState("");
+  useEffect(() => {
+    let alive = true;
+    invoke<{ enabled: boolean }>("call_recording_get").then(value => { if (alive) setRecording(value.enabled); }).catch(() => { if (alive) setRecordingError(zh ? "读取录制设置失败，请重试。" : "Could not load the recording setting."); });
+    return () => { alive = false; };
+  }, []);
+  async function setCapture(enabled: boolean) {
+    setRecordingBusy(true); setRecordingError("");
+    try { const value = await invoke<{ enabled: boolean }>("call_recording_set", { enabled }); setRecording(value.enabled); }
+    catch { setRecording(null); setRecordingError(zh ? "保存结果未确认，请重新读取录制状态。" : "Save outcome unknown. Reload the recording setting."); }
+    finally { setRecordingBusy(false); }
+  }
+  async function retryRecording() {
+    setRecordingBusy(true); setRecordingError("");
+    try { const value = await invoke<{ enabled: boolean }>("call_recording_get"); setRecording(value.enabled); }
+    catch { setRecordingError(zh ? "读取录制设置失败，请重试。" : "Could not load the recording setting."); }
+    finally { setRecordingBusy(false); }
+  }
+  const [records, setRecords] = useState<Record[]>([]);
+  const [source, setSource] = useState("");
+  const [status, setStatus] = useState("");
+  const [draft, setDraft] = useState("");
+  const [model, setModel] = useState("");
+  const [from, setFrom] = useState("");
+  const [beforeTime, setBeforeTime] = useState("");
+  const [invalidFrom, setInvalidFrom] = useState(false);
+  const [invalidBefore, setInvalidBefore] = useState(false);
+  const [recordedOnly, setRecordedOnly] = useState(false);
+  const [format, setFormat] = useState("json");
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
+  const [exportFailed, setExportFailed] = useState(false);
+  const timeRange = localTimeRange(from, beforeTime);
+  const rangeValid = timeRange !== null && !invalidFrom && !invalidBefore;
+  const startedFrom = timeRange?.started_from ?? null;
+  const startedBefore = timeRange?.started_before ?? null;
+  const [conversation, setConversation] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [more, setMore] = useState(false);
+  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const generation = useRef(0);
+  const latestFilter = useRef({ source, status, model, conversation, startedFrom, startedBefore, recordedOnly, rangeValid });
+  latestFilter.current = { source, status, model, conversation, startedFrom, startedBefore, recordedOnly, rangeValid };
+  const labelStatus = (value: string) => zh ? zhStates[states.indexOf(value)] ?? value : value;
+  const labelSource = (value: string) => zh ? zhSources[sources.indexOf(value)] ?? value : value;
+  const date = (value: number) => new Date(value * 1000).toLocaleString(zh ? "zh-CN" : "en-US");
+  async function load(before?: number) {
+    const token = ++generation.current;
+    if (!latestFilter.current.rangeValid) { setBusy(false); return; }
+    setBusy(true); setError("");
+    try {
+      const filter = latestFilter.current;
+      const page = await invoke<Record[]>("call_records_list", { filter: { before: before ?? null, source: filter.source || null, status: filter.status || null, model: filter.model || null, conversation_id: filter.conversation, started_from: filter.startedFrom, started_before: filter.startedBefore, recorded_only: filter.recordedOnly } });
+      if (token !== generation.current) return;
+      setRecords(current => before ? [...current, ...page.slice(0, 50)] : page.slice(0, 50));
+      setMore(page.length > 50);
+    } catch { if (token === generation.current) setError(zh ? "读取记录失败，请重试。" : "Could not load records. Retry."); }
+    finally { if (token === generation.current) setBusy(false); }
+  }
+  useEffect(() => { setRecords([]); setMore(false); setSelected(null); setConfirm(null); void load(); return () => { generation.current++; }; }, [source, status, model, conversation, startedFrom, startedBefore, recordedOnly, rangeValid]);
+  async function exportRecords() {
+    if (exporting || busy || !rangeValid || draft.trim() !== model) return;
+    setExporting(true); setExportMessage(""); setExportFailed(false);
+    const f = latestFilter.current;
+    try {
+      const result = await invoke<{ path: string; count: number; recorded_count: number } | null>("call_records_export", { format, filter: { source: f.source || null, status: f.status || null, model: f.model || null, conversation_id: f.conversation, started_from: f.startedFrom, started_before: f.startedBefore, recorded_only: f.recordedOnly } });
+      setExportMessage(result ? zh ? `已导出 ${result.count} 条调用（${result.recorded_count} 条含正文）：${result.path}` : `Exported ${result.count} calls (${result.recorded_count} with content): ${result.path}` : zh ? "已取消导出，未保存文件。" : "Export cancelled; no file saved.");
+    } catch (error) { setExportFailed(true); setExportMessage(exportError(error, zh)); }
+    finally { setExporting(false); }
+  }
+  async function remove() {
+    if (!confirm) return;
+    setBusy(true); setError("");
+    try { await invoke("call_records_delete", { id: confirm === "all" ? null : confirm }); setConfirm(null); setSelected(null); await load(); }
+    catch { setError(zh ? "清理记录失败，请重试。" : "Could not delete records. Retry."); setBusy(false); }
+  }
+  return <section aria-label={zh ? "调用历史" : "Call history"}>
+    <div className="call-recording-control"><label><input type="checkbox" role="switch" checked={recording === true} disabled={recording === null || recordingBusy || exporting} onChange={event => void setCapture(event.target.checked)} /><span>{zh ? "记录对话内容" : "Record dialogue content"}</span></label><span className="call-recording-state" role="status">{recordingBusy ? zh ? "正在保存…" : "Saving…" : recording === null ? recordingError ? zh ? "录制状态未知" : "Recording unknown" : zh ? "正在读取…" : "Loading…" : recording ? zh ? "录制已开启" : "Recording on" : zh ? "录制已关闭" : "Recording off"}</span></div>
+    <details className="call-help"><summary>{zh ? "录制与导出说明" : "Recording and export details"}</summary>
+    <p className="call-records-description">{zh ? "开启后录制新调用的完整输入与回答（凭据会脱敏）；关闭立即停止正文录制，已录内容保留。关闭时仍记录调用信息；store:false 不保存。" : "Records full inputs and answers for new calls, with credential redaction. Turning off stops active capture and keeps saved text. Call metadata continues; store:false opts out."}</p>
+      <p id="call-time-help">{zh ? "按调用开始时间筛选，使用本地时区；留空为不限。包含起点，不包含终点。" : "Filters call start time in your local timezone. Blank means unrestricted; start included, end excluded."}</p>
+      <p>{zh ? "导出全部匹配调用，不限当前页；包含已录输入与回答。运行中/部分录制按快照导出，未录正文明确标注。" : "Exports all matching calls, across pages, including recorded inputs and answers. Active/partial recordings are snapshots; missing content stays marked."}</p>
+    </details>
+    {recordingError && <div role="alert"><p>{recordingError}</p>{recording === null && <button disabled={recordingBusy} onClick={() => void retryRecording()}>{zh ? "重新读取状态" : "Reload setting"}</button>}</div>}
+    <form className="call-filters" onSubmit={event => { event.preventDefault(); setModel(draft.trim()); }}>
+      <fieldset className="call-filter-fields" disabled={exporting}>
+      <label className="call-select-label">{zh ? "来源" : "Source"}<select aria-label={zh ? "来源" : "Source"} value={source} onChange={e => setSource(e.target.value)}><option value="">{zh ? "全部来源" : "All sources"}</option>{sources.map(value => <option key={value} value={value}>{labelSource(value)}</option>)}</select></label>
+      <label className="call-select-label">{zh ? "状态" : "Status"}<select aria-label={zh ? "状态" : "Status"} value={status} onChange={e => setStatus(e.target.value)}><option value="">{zh ? "全部状态" : "All states"}</option>{states.map(value => <option key={value} value={value}>{labelStatus(value)}</option>)}</select></label>
+      <label>{zh ? "型号" : "Model"}<input aria-label={zh ? "型号" : "Model"} value={draft} onChange={e => setDraft(e.target.value)} placeholder={zh ? "型号关键词" : "Model keyword"} /></label>
+      <label>{zh ? "开始时间（含）" : "From (inclusive)"}<input type="datetime-local" min="1970-01-01T00:00" value={from} onInput={e => setInvalidFrom(!e.currentTarget.validity.valid)} onChange={e => { setFrom(e.target.value); setInvalidFrom(!e.target.validity.valid); }} aria-describedby="call-time-help" /></label>
+      <label>{zh ? "结束时间（不含）" : "Before (exclusive)"}<input type="datetime-local" min="1970-01-01T00:00" value={beforeTime} onInput={e => setInvalidBefore(!e.currentTarget.validity.valid)} onChange={e => { setBeforeTime(e.target.value); setInvalidBefore(!e.target.validity.valid); }} aria-describedby="call-time-help" /></label>
+      <label className="call-recorded-only"><input type="checkbox" checked={recordedOnly} onChange={e => setRecordedOnly(e.target.checked)} />{zh ? "仅含已录正文" : "Recorded content only"}</label>
+      </fieldset>
+
+      {!rangeValid && <p role="alert">{exportError("INVALID_TIME_RANGE", zh)}</p>}
+      <div className="call-toolbar-actions">
+        <div className="call-filter-actions"><button className="primary" disabled={busy || exporting || !rangeValid}>{zh ? "查询" : "Search"}</button><button type="button" disabled={busy || exporting || !rangeValid} onClick={() => void load()}>{zh ? "刷新" : "Refresh"}</button></div>
+        <div className="call-export-controls"><span className="call-select-label"><select aria-label={zh ? "导出格式" : "Export format"} value={format} onChange={e => setFormat(e.target.value)} disabled={exporting}>{["json", "md", "xlsx", "csv", "txt", "html"].map(value => <option key={value} value={value}>{value.toUpperCase()}</option>)}</select></span><button type="button" disabled={busy || exporting || !rangeValid || draft.trim() !== model || records.length === 0} onClick={() => void exportRecords()}>{exporting ? zh ? "正在导出…" : "Exporting…" : zh ? "导出全部筛选结果…" : "Export all matches…"}</button></div>
+        <button className="call-clear" type="button" disabled={busy || exporting || records.length === 0} onClick={() => setConfirm("all")}>{zh ? "清理已结束记录" : "Clear finished records"}</button>
+      </div>
+      {draft.trim() !== model && <p className="call-toolbar-message">{zh ? "请先点击查询应用型号筛选。" : "Apply the model filter with Search first."}</p>}
+      {exportMessage && <p className="call-toolbar-message export-message" title={exportMessage} role={exportFailed ? "alert" : "status"}>{exportMessage}</p>}
+    </form>
+    {conversation && <p>{zh ? "当前会话" : "Conversation"}: {conversation} <button disabled={exporting} onClick={() => setConversation(null)}>{zh ? "查看全部调用" : "Show all calls"}</button></p>}
+    {confirm && <div className="call-confirm" role="alert"><p>{zh ? confirm === "all" ? "清理全部已结束的调用记录？这包含筛选范围外的记录；续接会话映射仍保留。" : "删除这条调用记录？续接会话映射仍保留。" : confirm === "all" ? "Delete all finished calls, including those outside this filter? Resume mappings are retained." : "Delete this call? Resume mappings are retained."}</p><button disabled={busy || exporting || !rangeValid} onClick={() => void remove()}>{zh ? "确认清理" : "Confirm deletion"}</button><button disabled={busy || exporting || !rangeValid} onClick={() => setConfirm(null)}>{zh ? "取消" : "Cancel"}</button></div>}
+    {error && <p role="alert">{error}</p>}
+    {records.length === 0 && !error && <p className="empty" role="status">{busy ? zh ? "正在读取…" : "Loading…" : zh ? "暂无符合条件的调用记录。升级前的 Chat 调用不会补录。" : "No matching calls. Earlier Chat calls are not backfilled."}</p>}
+    <div className="session-list">{records.map(record => <article className="card" key={record.id}><strong>{record.resolved_model ?? record.requested_model}</strong><span>{labelSource(record.source)} · {record.endpoint === "model_test" ? zh ? "短测试" : "Test" : record.endpoint === "responses" ? "Responses" : "Chat"} · {labelStatus(record.status)} · {record.streamed ? zh ? "流式" : "Stream" : zh ? "非流式" : "Non-stream"}</span><small>{date(record.started_at)} · {record.elapsed_ms === null ? zh ? "耗时未知" : "Duration unknown" : `${(record.elapsed_ms / 1000).toFixed(1)} s`} · {zh ? "总用量" : "Total tokens"} {record.total_tokens ?? (zh ? "未知" : "Unknown")}{record.error_code ? ` · ${record.error_code}` : ""}</small>{record.diagnostics && <small>{zh ? "排队 / 连接处理" : "Queue / adapter"} {duration(record.diagnostics.queue_wait_ms, zh)} / {duration(record.diagnostics.adapter_ms, zh)} · {usageLabel(record.diagnostics, zh)}</small>}<div className="call-actions"><button onClick={() => setSelected(selected === record.id ? null : record.id)} aria-expanded={selected === record.id}>{zh ? "详情" : "Details"}</button>{record.conversation_id && <button disabled={busy || exporting || !rangeValid} onClick={() => setConversation(record.conversation_id)}>{zh ? "本会话调用" : "Conversation calls"}</button>}<button disabled={busy || exporting || record.status === "in_progress"} onClick={() => setConfirm(record.id)}>{zh ? "删除记录" : "Delete record"}</button></div>{selected === record.id && <dl className="call-detail"><dt>{zh ? "调用 ID" : "Call ID"}</dt><dd>{record.id}</dd><dt>{zh ? "请求型号" : "Requested model"}</dt><dd>{record.requested_model}</dd><dt>{zh ? "上游报告型号" : "Reported model"}</dt><dd>{record.actual_model ?? (zh ? "未知" : "Unknown")}</dd><dt>{zh ? "连接" : "Connection"}</dt><dd>{record.adapter_id ?? (zh ? "尚未解析" : "Unresolved")}</dd><dt>{zh ? "响应 / 会话 ID" : "Response / conversation ID"}</dt><dd>{record.response_id ?? "—"}<br />{record.conversation_id ?? "—"}</dd><dt>{zh ? "输入 / 输出用量" : "Input / output tokens"}</dt><dd>{record.input_tokens ?? "?"} / {record.output_tokens ?? "?"}</dd><dt>{zh ? "结束原因" : "Finish reason"}</dt><dd>{record.finish_reason ?? (zh ? "未知" : "Unknown")}</dd><dt>{zh ? "结束时间" : "Finished at"}</dt><dd>{record.finished_at === null ? "—" : date(record.finished_at)}</dd>{record.status === "cancelled" && <><dt>{zh ? "取消范围" : "Cancellation"}</dt><dd>{zh ? "仅停止本机接收；上游可能继续执行或计费。" : "Local receive stopped; upstream execution or billing may continue."}</dd></>}</dl>}{selected === record.id && <CacheUsageView diagnostics={record.diagnostics} inputTokens={record.input_tokens} zh={zh} />}{selected === record.id && <CallDiagnosticsView diagnostics={record.diagnostics} requestId={record.request_id} zh={zh} />}{selected === record.id && <RecordedDialogue id={record.id} locale={locale} status={record.status} recording={recording} />}</article>)}</div>
+    {more && <button className="call-more" disabled={busy || exporting || !rangeValid} onClick={() => void load(records[records.length - 1]?.sequence)}>{zh ? "加载更多" : "Load more"}</button>}
+  </section>;
+}
+
+
+type Dialogue = { messages: { role?: string; content?: unknown }[]; answer: string; state: string };
+function RecordedDialogue({ id, locale, status, recording }: { id: string; locale: "zh" | "en"; status: string; recording: boolean | null }) {
+  const zh = locale === "zh";
+  const [content, setContent] = useState<Dialogue | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState("");
+  const token = useRef(0);
+  async function reload() {
+    const generation = ++token.current; setBusy(true); setError("");
+    try { const value = await invoke<Dialogue | null>("call_record_content", { id }); if (token.current === generation) setContent(value); }
+    catch { if (token.current === generation) setError(zh ? "读取对话内容失败，请重试。" : "Could not load the dialogue. Retry."); }
+    finally { if (token.current === generation) setBusy(false); }
+  }
+  useEffect(() => { void reload(); return () => { token.current++; }; }, [id, status, recording]);
+  const role = (value?: string) => zh ? ({ system: "系统提示词", developer: "开发者指令", user: "用户", assistant: "模型" }[value ?? "user"] ?? value ?? "输入") : value ?? "Input";
+  const state = zh ? ({ recording: "录制中", complete: "完整录制", partial: "部分内容", stopped: "已停止录制" }[content?.state ?? ""] ?? "") : content?.state;
+  return <section className="recorded-dialogue" aria-label={zh ? "对话内容" : "Recorded dialogue"}><header><h3>{zh ? "对话内容" : "Dialogue content"}</h3><span>{state}</span><button disabled={busy} onClick={() => void reload()}>{zh ? "刷新内容" : "Refresh content"}</button></header>{busy && <p role="status">{zh ? "正在读取对话…" : "Loading dialogue…"}</p>}{error ? <p role="alert">{error}</p> : !busy && !content ? <p className="muted">{zh ? "此调用未录制正文。只有开启开关后的新调用才会保存，旧记录无法补回。" : "This call has no recorded text. Only new calls started while recording is on are captured."}</p> : content && <div className="dialogue-scroll">{Array.isArray(content.messages) ? content.messages.map((message, index) => <article className="dialogue-message" key={index}><strong>{role(message.role)}</strong><p>{typeof message.content === "string" ? message.content : JSON.stringify(message.content)}</p></article>) : <pre>{JSON.stringify(content.messages, null, 2)}</pre>}<article className="dialogue-message dialogue-answer"><strong>{zh ? "模型回答" : "Model answer"}</strong><p>{content.answer || (zh ? "尚无录下的回答。" : "No captured answer yet.")}</p></article>{content.state !== "complete" && <small>{zh ? "这些是已录下的内容，可能不完整；不会自动用于后续上下文。" : "Captured content may be incomplete and is not automatically used as context."}</small>}</div>}</section>;
+}
+
+function duration(value: number | null | undefined, zh: boolean) { return value == null ? zh ? "未知" : "Unknown" : `${(value / 1000).toFixed(3)} s`; }
+function usageLabel(value: Diagnostics, zh: boolean) { return value.usage_source === "provider_reported" ? zh ? `上游已报告${value.usage_scope === "last_turn" ? "本轮" : "本次"}用量` : "Upstream reported request usage" : zh ? "上游未提供本次用量" : "Request usage not reported"; }
+function CallDiagnosticsView({ diagnostics: d, requestId, zh }: { diagnostics?: Diagnostics | null; requestId?: string | null; zh: boolean }) {
+  if (!d) return <p className="muted">{zh ? "旧版本记录：阶段耗时和来源未知。" : "Legacy record: phase timings and sources unknown."}</p>;
+  const unknown = zh ? "未知" : "Unknown";
+  const outcome = zh ? ({ DIRECT_COMPLETED: "接收完成", PARTIAL: "部分结果", INCOMPLETE: "结果不完整", ERROR: "失败", CANCELLED: "已取消", UNKNOWN_TERMINATION: "异常结束，原因未知" }[d.outcome ?? ""] ?? unknown) : d.outcome ?? unknown;
+  return <dl className="call-detail"><dt>{zh ? "请求关联 ID" : "Request ID"}</dt><dd>{requestId ?? unknown}</dd>{([
+    [zh ? "预检与路由" : "Auth and route", d.auth_route_ms],
+    [zh ? "排队" : "Queue", d.queue_wait_ms], [zh ? "启动间隔等待" : "Start spacing", d.interval_wait_ms],
+    [zh ? "连接启动" : "Adapter startup", d.adapter_startup_ms], [zh ? "连接处理" : "Adapter time", d.adapter_ms],
+    [zh ? "首个文字（自入站）" : "First text since admission", d.first_output_ms], [zh ? "上游纯推理时间" : "Upstream model execution", d.model_execution_ms],
+    [zh ? "总耗时（至终态写入前）" : "Total before terminal write", d.total_elapsed_ms],
+  ] as [string, number | null | undefined][]).map(([label, ms]) => <span className="call-metric" key={label}><dt>{label}</dt><dd>{duration(ms, zh)}</dd></span>)}<dt>{zh ? "处理结果 / 指令规范化" : "Outcome / normalization"}</dt><dd>{outcome} · {d.normalization === "leading_instructions_v1" ? zh ? "按顺序合并前置指令" : "Ordered leading instructions" : zh ? "无已报告规范化" : "No reported normalization"}</dd><dt>{zh ? "用量来源" : "Usage source"}</dt><dd>{usageLabel(d, zh)}</dd><dt>{zh ? "结束原因来源" : "Finish source"}</dt><dd>{d.finish_source === "provider_reported" ? zh ? "上游事件" : "Upstream event" : unknown}</dd><dt>{zh ? "请求 / 响应字节" : "Request / response bytes"}</dt><dd>{d.request_bytes ?? unknown} / {d.response_bytes ?? unknown}{d.response_bytes_scope === "through_first_terminal_frame" && (zh ? "（至首个终态帧）" : " (through first terminal frame)")}</dd><dt>{zh ? "正文录制 / 取消请求" : "Body recording / cancellation requested"}</dt><dd>{d.body_recording_enabled == null ? unknown : d.body_recording_enabled ? zh ? "已开启" : "On" : zh ? "未开启" : "Off"} / {d.cancel_requested ? zh ? "是" : "Yes" : zh ? "否" : "No"}</dd><dt>{zh ? "远端停止执行或计费" : "Remote stop / billing"}</dt><dd>{unknown}</dd><dt>{zh ? "CLI 空闲限时（本次配置）" : "CLI idle limit for this request"}</dt><dd>{d.cli_idle_timeout_seconds == null ? unknown : `${d.cli_idle_timeout_seconds} s`}</dd><dt>{zh ? "超时层 / 触发限值" : "Timeout layer / limit"}</dt><dd>{timeoutLayerLabel(d.timeout_layer, zh)} / {duration(d.timeout_limit_ms, zh)}</dd>{d.reason_code && <><dt>{zh ? "诊断原因" : "Reason"}</dt><dd>{d.reason_code}</dd></>}</dl>;
+}
+
+function CacheUsageView({ diagnostics, inputTokens, zh }: { diagnostics?: Diagnostics | null; inputTokens: number | null; zh: boolean }) {
+  const usage = cacheUsage(diagnostics, inputTokens);
+  const unknown = zh ? "未知" : "Unknown";
+  const locale = zh ? "zh-CN" : "en-US";
+  const tokens = (value: number | null) => value === null ? unknown : value.toLocaleString(locale);
+  const percent = usage.percent === null ? unknown : usage.percent > 0 && usage.percent < 0.1 ? "<0.1%" : `${usage.percent.toFixed(1)}%`;
+  return <section aria-label={zh ? "缓存用量" : "Cache usage"}>
+    <dl className="call-detail"><dt>{zh ? "上游报告输入 Token" : "Reported input tokens"}</dt><dd>{tokens(usage.input)}</dd>
+      <dt>{zh ? "其中缓存 Token" : "Cached input tokens"}</dt><dd>{tokens(usage.cached)}</dd>
+      <dt>{zh ? "缓存占输入比例" : "Cached share of input"}</dt><dd>{percent}</dd>
+      <dt>{zh ? "用量报告状态" : "Usage report status"}</dt><dd>{usage.reported ? zh ? "上游已报告本次用量" : "Upstream reported request usage" : unknown}</dd>
+    </dl>
+    <p className="muted">{zh ? "缓存 Token 已包含在输入量中。未报告时保留未知；占比不代表订阅额度或费用节省。旧记录不补填。" : "Cached tokens are included in input. Missing reports stay unknown; the share does not imply subscription or cost savings. Legacy records are not backfilled."}</p>
+  </section>;
+}

@@ -1,0 +1,8 @@
+[package]
+name = "localmux-security"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+localmux-domain = { path = "../domain" }
+serde = { version = "1", features = ["derive"] }

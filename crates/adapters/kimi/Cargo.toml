@@ -1,0 +1,12 @@
+[package]
+name = "localmux-adapter-kimi"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+localmux-adapter-sdk = { path = "../../adapter-sdk" }
+localmux-domain = { path = "../../domain" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
