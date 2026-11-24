@@ -64,7 +64,7 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
     for store in [false, true] {
         let request = Request::builder().method("POST").uri("/v1/responses")
             .header("authorization", format!("Bearer {key}"))
-            .body(Body::from(serde_json::json!({"model":"codex/different", "input":"change rejected", "previous_response_id":first_id, "store":store}).to_string())).unwrap();
+            .body(Body::from(serde_json::json!({"model":"sk-fixture-sensitive", "input":"change rejected", "previous_response_id":first_id, "store":store}).to_string())).unwrap();
         assert_eq!(
             app.clone().oneshot(request).await.unwrap().status(),
             StatusCode::CONFLICT
@@ -73,6 +73,12 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
             .await
             .unwrap()
             .remove(0);
+        let events = localmux_storage::list_run_events(&pool, &session.id)
+            .await
+            .unwrap();
+        assert!(events
+            .iter()
+            .all(|event| !event.detail_json.contains("fixture-sensitive")));
         assert_eq!(
             localmux_storage::list_run_events(&pool, &session.id)
                 .await
@@ -81,12 +87,18 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
             usize::from(store)
         );
     }
-    let second = app
-        .clone()
-        .oneshot(send("second", Some(first_id), false))
-        .await
-        .unwrap();
+    let (left, right) = tokio::join!(
+        app.clone().oneshot(send("left", Some(first_id), false)),
+        app.clone().oneshot(send("right", Some(first_id), false))
+    );
+    let (left, right) = (left.unwrap(), right.unwrap());
+    let (second, stale) = if left.status() == StatusCode::OK {
+        (left, right)
+    } else {
+        (right, left)
+    };
     assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(stale.status(), StatusCode::NOT_FOUND);
     let second: serde_json::Value =
         serde_json::from_slice(&second.into_body().collect().await.unwrap().to_bytes()).unwrap();
     let second_id = second["id"].as_str().unwrap();
@@ -99,6 +111,7 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
         StatusCode::NOT_FOUND
     );
     let streamed = app
+        .clone()
         .oneshot(send("stream", Some(second_id), true))
         .await
         .unwrap();
@@ -130,9 +143,29 @@ async fn responses_chain_uses_native_session_and_rejects_stale_branch() {
     )
     .await
     .unwrap();
-    assert_eq!(calls.len(), 4);
+    assert!(matches!(calls.len(), 4 | 5));
     assert_eq!(calls.iter().filter(|r| r.status == "completed").count(), 3);
-    assert_eq!(calls.iter().filter(|r| r.status == "failed").count(), 1);
+    assert_eq!(
+        calls.iter().filter(|r| r.status == "failed").count(),
+        calls.len() - 3
+    );
+    sqlx::query("CREATE TRIGGER reject_terminal BEFORE UPDATE OF status ON call_records WHEN NEW.status='completed' BEGIN SELECT RAISE(ABORT, 'fixture failure'); END").execute(&pool).await.unwrap();
+    let count = || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM responses").fetch_one(&pool);
+    let before = count().await.unwrap();
+    assert_eq!(
+        app.clone()
+            .oneshot(send("failed", None, false))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let failed_stream = app
+        .oneshot(send("failed stream", None, true))
+        .await
+        .unwrap();
+    assert!(failed_stream.into_body().collect().await.is_err());
+    assert_eq!(count().await.unwrap(), before);
     pool.close().await;
     std::fs::remove_file(path).ok();
 }

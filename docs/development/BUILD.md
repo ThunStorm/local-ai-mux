@@ -1,6 +1,6 @@
 # LocalAiMux 构建与本机部署
 
-适用 v0.3.0。需要Rust1.98.1、Node22.18+/24、pnpm11.19.0与Tauri2系统依赖。Node版本须满足TypeScript原生测试加载及Vite要求；不要使用系统旧Node来证明验证通过。
+适用 v0.3.1。需要Rust1.98.1、Node22.18+/24、pnpm11.19.0与Tauri2系统依赖。Node版本须满足TypeScript原生测试加载及Vite要求；不要使用系统旧Node来证明验证通过。
 
 ## 开发与检查
 
@@ -19,6 +19,8 @@ Windows使用`pwsh scripts/verify.ps1`。SDK脚本只运行回环合成服务，
 
 `bash scripts/deploy-local-macos.sh`从当前工作树打包，安装`~/Applications/LocalAiMux.app`，保留旧数据并处理旧LocalMux.app安装入口，正常退出旧程序后重启；若旧程序因任务保护未退出则取消安装，不强杀。来源、分支、提交、工作树与主程序SHA256记录于dist/localmux/build-info.txt。Bundle identifier `app.localmux.desktop`及`~/Library/Application Support/LocalMux`数据目录保持兼容。
 
+Apple Silicon 本机部署使用 `aarch64-apple-darwin` Rust 工具链，可用 `rustc -vV` 核对 host。脚本在退出旧进程前用 `lipo` 校验应用二进制包含当前机器的原生架构。
+
 部署闭环：
 
 1. 确认API active_tasks与DB in_progress均0，SQLite逻辑备份（0600）、integrity/FK检查，记录Key/权限/连接/历史与设置摘要。
@@ -34,7 +36,7 @@ macOS26+类可用时使用公开NSGlassEffectView及WKWebView.underPageBackgroun
 
 应用图标源为apps/desktop/public/logo-concepts/mountain-wave-2026-10-09/04-wave-sun-negative.png，旧SVG位于docs/product/design/liquid-glass-chat/icons/localmux-2026-10-05.svg；软件图标是原应用/CLI资产，来源哈希保留在同设计目录icon-sources.json。原生成样稿仅作历史。菜单栏使用独立透明template PNG；API运行时白浪/红日，停止时恢复系统模板，状态变化时切换而非持续重绘。
 
-本机macOS结果不替代Windows/ARM64安装或系统凭据库实机。签名、公证、可信HTTPS更新源与安装/回滚演练见[TODO](../TODO.md)。Git封版标签不自动创建公开Release；当前验证和部署结果见[封版记录](../releases/V0_2_0_FREEZE.md)。
+本机验证范围以[当前交接](../HANDOFF.md)为准。签名、公证、可信 HTTPS 更新源与分发包安装/回滚演练见[待办](../TODO.md)和[发布说明](RELEASE.md)。
 
 ## 自定义数据目录
 

@@ -20,6 +20,14 @@ LEGACY="$HOME/Applications/LocalMux.app"
 test -d "$SRC" || { echo "missing app: $SRC" >&2; exit 1; }
 APP_PROCESS="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$SRC/Contents/Info.plist")"
 APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$SRC/Contents/Info.plist")"
+NATIVE_ARCH="$(uname -m)"
+if [[ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" == 1 ]]; then
+  NATIVE_ARCH=arm64
+fi
+if ! lipo "$SRC/Contents/MacOS/$APP_PROCESS" -verify_arch "$NATIVE_ARCH"; then
+  echo "LocalAiMux build does not support native architecture $NATIVE_ARCH; installation cancelled" >&2
+  exit 1
+fi
 mkdir -p "$HOME/Applications" "$ROOT/dist/localmux"
 STAGE="$(mktemp -d "$HOME/Applications/.localmux-deploy.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT

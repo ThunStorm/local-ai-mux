@@ -75,6 +75,9 @@ impl Adapter for DiagnosticAdapter {
         request: NormalizedRequest,
     ) -> Result<NormalizedStream, AdapterError> {
         self.0.fetch_add(1, Ordering::SeqCst);
+        if request.prompt == "stall-startup" {
+            std::future::pending::<()>().await;
+        }
         if request.prompt == "extended" {
             assert_eq!(request.cli_idle_timeout, Duration::from_secs(1200));
         }
@@ -564,4 +567,42 @@ async fn first_payload_timeout_retains_its_layer_and_limit() {
     assert_eq!(error["reason_code"], "upstream_first_payload_timeout");
     assert_eq!(error["timeout_limit_ms"], 120_000);
     assert!(error.get("upstream_dispatched").is_none());
+}
+
+#[tokio::test]
+async fn responses_startup_timeout_cools_the_connection() {
+    let state = GatewayState::new(localmux_storage::open_memory().await.unwrap());
+    let calls = Arc::new(AtomicUsize::new(0));
+    state
+        .register(Arc::new(DiagnosticAdapter(
+            calls.clone(),
+            AdapterKind::Provider,
+            Default::default(),
+        )))
+        .await;
+    let (_, key) = state.create_key(&["responses:invoke"]).await.unwrap();
+    let app = router(state);
+    let request = || {
+        post(
+            &key,
+            "/v1/responses",
+            serde_json::json!({"model":"diagnostic/luna","input":"stall-startup","stream":true}),
+        )
+    };
+    let task = tokio::spawn(app.clone().oneshot(request()));
+    while calls.load(Ordering::SeqCst) == 0 && !task.is_finished() {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(31)).await;
+    assert_eq!(
+        task.await.unwrap().unwrap().status(),
+        StatusCode::GATEWAY_TIMEOUT
+    );
+    tokio::time::resume();
+    assert_eq!(
+        app.oneshot(request()).await.unwrap().status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
