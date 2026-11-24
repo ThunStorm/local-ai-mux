@@ -1,0 +1,8 @@
+[package]
+name = "localmux-adapter-glm"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+localmux-adapter-sdk = { path = "../../adapter-sdk" }
+secrecy = "0.10"

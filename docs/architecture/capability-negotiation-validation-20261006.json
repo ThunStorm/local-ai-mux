@@ -1,0 +1,1122 @@
+{
+  "catalog_sets_equal": true,
+  "count": 55,
+  "inference_requests_sent": 0,
+  "models": [
+    {
+      "default_reasoning_effort": "low",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-6.1-sol",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": "low",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-6-astra",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": "medium",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-6-sol",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": "medium",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-6-luna",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": "low",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-5.6-sol",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": "medium",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-5.6-terra",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": "medium",
+      "developer": "SUPPORTED",
+      "id": "codex/gpt-5.6-luna",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [
+        "text",
+        "image"
+      ],
+      "reasoning_efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Auto",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Ultimate",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Performance",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Efficient",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Sonus",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Cantus",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Qwen3.8-Max",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Qwen3.8-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Qwen3.7-Max",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Qwen3.7-Plus",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Kimi-K3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/Kimi-K2.8-Preview",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/GLM-5.3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/GLM-5.3-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/DeepSeek-V4-Pro",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/DeepSeek-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder/MiniMax-M3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Auto",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Qwen3.8-Max",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Qwen3.8-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Qwen3.7-Max",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Qwen3.7-Plus",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Qwen3.7-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/DeepSeek-V4-Pro",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/DeepSeek-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/GLM-5.3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/GLM-5.3-Flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/GLM-5.2",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Kimi-K3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/Kimi-K2.8-Preview",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "qoder-cn/MiniMax-M2.7",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/hy4-preview",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/hy3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/hy3-x",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/space-bunny",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/deepseek-v4.1-flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/glm-5.3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/glm-5.3-flash",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/glm-5.2",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/glm-5.1",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/glm-5v-turbo",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/minimax-m3",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/minimax-m2.7",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/kimi-k3-1",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/kimi-k2.8-preview",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/kimi-k2.7",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/kimi-k2.6",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    },
+    {
+      "default_reasoning_effort": null,
+      "developer": "UNKNOWN",
+      "id": "codebuddy/deepseek-v4-pro",
+      "live_verified": false,
+      "max_completion_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNKNOWN"
+      },
+      "max_tokens": {
+        "max": null,
+        "min": 0.0,
+        "support": "UNSUPPORTED"
+      },
+      "native_input_modalities": [],
+      "reasoning_efforts": [],
+      "system": "SUPPORTED"
+    }
+  ],
+  "schema_version": 2,
+  "observed_at": "2026-10-06T22:14:08.327248+08:00"
+}
