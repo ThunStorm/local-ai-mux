@@ -29,4 +29,4 @@ SDK脚本只运行隔离合成服务，需安装官方Python SDK，可用`LOCALM
 
 ## 发布与安装边界
 
-v0.3.0 是 GitHub 源码预发布。签名安装包、公证、自动更新及其他平台实机验证见[发布说明](docs/development/RELEASE.md)。升级沿用 `LocalMux` 默认数据目录和 `app.localmux.desktop` 应用标识。当前验证状态见[交接](docs/HANDOFF.md)，后续工作见[TODO](docs/TODO.md)。
+v0.3.0 是 macOS Apple Silicon 预发布，GitHub 提供应用压缩包和源码归档。该构建尚未通过 Developer ID 签名及公证。自动更新与正式发行条件见[发布说明](docs/development/RELEASE.md)。升级沿用 `LocalMux` 默认数据目录和 `app.localmux.desktop` 应用标识。当前验证状态见[交接](docs/HANDOFF.md)，后续工作见[TODO](docs/TODO.md)。
