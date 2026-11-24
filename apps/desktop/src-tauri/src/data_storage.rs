@@ -131,7 +131,11 @@ async fn database_snapshot(source: &Path, target: &Path) -> io::Result<()> {
     copied?;
     source_closed?;
     target_closed?;
-    fs::File::open(target)?.sync_all()?;
+    // Windows requires write access to flush the completed snapshot.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(target)?
+        .sync_all()?;
     Ok(())
 }
 fn copy_tree(source: &Path, target: &Path) -> io::Result<()> {
