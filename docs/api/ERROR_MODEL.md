@@ -36,3 +36,5 @@ Qoder CLI 明确报告首包超时时，返回 504 `LMX_PROCESS_TIMEOUT`，原�
 ### CLI stderr 诊断补充
 
 真实视频重跑中，Qoder 内部会话记录了首包超时，但公开接口返回通用 502。此前 CLI 流式调用丢弃 stderr，无法使用该通道上可能存在的明确错误。Qoder 路径现在异步排空 stderr，仅在内存保留最近 8 KiB。若 CLI 结束失败且未产出正文，按固定首包签名识别，未知错误仍返回通用 502。空的 JSON error 字段不再中止正常结果。成功请求、重试策略与上游调用次数均沿用原路径。子进程夹具验证 stdout、stderr 与空 error 字段，真实样本能否由此获得明确归因待观察。
+
+v0.3.1 的 Chat 和 Responses 在 Gateway 等待流启动超时时，均对该连接开启 30 秒冷却。后续请求遵循现有 503 与 Retry-After 契约。

@@ -1,6 +1,6 @@
 # LocalAiMux
 
-LocalAiMux **v0.3.0** 是 Tauri 2 桌面应用，将用户显式授权的官方AI运行时接入本机OpenAI兼容文本API。主流程是扫描应用、连接运行时、查看真实型号与能力、启动API并复制配置。发现、已连接、目录已报告与真实模型验证分别呈现，额度或用量无证据时保持未知。[文档导航](docs/README.md) · [支持矩阵](docs/product/SUPPORTED_APPS.md) · [架构总览](docs/architecture/OVERVIEW.md) · [版本说明](docs/releases/V0_3_0.md) · [TODO](docs/TODO.md)。
+LocalAiMux **v0.3.1** 是 Tauri 2 桌面应用，将用户显式授权的官方AI运行时接入本机OpenAI兼容文本API。主流程是扫描应用、连接运行时、查看真实型号与能力、启动API并复制配置。发现、已连接、目录已报告与真实模型验证分别呈现，额度或用量无证据时保持未知。[文档导航](docs/README.md) · [支持矩阵](docs/product/SUPPORTED_APPS.md) · [架构总览](docs/architecture/OVERVIEW.md) · [版本说明](docs/releases/V0_3_1.md) · [TODO](docs/TODO.md)。
 
 ## 使用
 
@@ -29,4 +29,4 @@ SDK脚本只运行隔离合成服务，需安装官方Python SDK，可用`LOCALM
 
 ## 发布与安装边界
 
-v0.3.0 是 macOS Apple Silicon 预发布，GitHub 提供应用压缩包和源码归档。该构建尚未通过 Developer ID 签名及公证。自动更新与正式发行条件见[发布说明](docs/development/RELEASE.md)。升级沿用 `LocalMux` 默认数据目录和 `app.localmux.desktop` 应用标识。当前验证状态见[交接](docs/HANDOFF.md)，后续工作见[TODO](docs/TODO.md)。
+v0.3.1 是 macOS Apple Silicon 预发布，GitHub 提供应用压缩包和源码归档。该构建尚未通过 Developer ID 签名及公证。自动更新与正式发行条件见[发布说明](docs/development/RELEASE.md)。升级沿用 `LocalMux` 默认数据目录和 `app.localmux.desktop` 应用标识。当前验证状态见[交接](docs/HANDOFF.md)，后续工作见[TODO](docs/TODO.md)。

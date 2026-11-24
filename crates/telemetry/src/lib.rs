@@ -21,14 +21,28 @@ fn patterns() -> &'static [Regex] {
 
 /// Dialogue capture preserves ordinary text (including email/path), but never recognized credentials.
 pub fn redact_credentials(message: &str) -> String {
+    redact_credentials_snapshot(message).into_owned()
+}
+
+/// Borrow ordinary text so recording a stream does not copy the cumulative
+/// answer for every redaction pattern that has no match.
+pub fn redact_credentials_snapshot(message: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
     static CREDENTIALS: OnceLock<Vec<Regex>> = OnceLock::new();
-    CREDENTIALS.get_or_init(|| [
+    let patterns = CREDENTIALS.get_or_init(|| [
         r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
         r"\blmx_[A-Za-z0-9_-]*",
         r"\bsk-[A-Za-z0-9._~+/=-]*",
         r#"(?i)\b(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|password|cookie)\b["']?\s*[:=]\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s,;]+)"#,
     ].into_iter().map(|pattern| Regex::new(pattern).expect("credential pattern")).collect())
-    .iter().fold(message.to_owned(), |text,pattern| pattern.replace_all(&text,"[REDACTED]").into_owned())
+    ;
+    let mut text = Cow::Borrowed(message);
+    for pattern in patterns {
+        if let Cow::Owned(replaced) = pattern.replace_all(&text, "[REDACTED]") {
+            text = Cow::Owned(replaced);
+        }
+    }
+    text
 }
 
 pub fn redact(message: &str) -> String {

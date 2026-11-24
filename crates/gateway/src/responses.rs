@@ -79,7 +79,7 @@ async fn context(
                     &state.pool,
                     &mapping.id,
                     "ROUTE_CHANGE_REJECTED",
-                    &json!({"requested_model":requested}).to_string(),
+                    &json!({"requested_model":super::recording::safe_model(requested)}).to_string(),
                     now(),
                 )
                 .await;
@@ -419,6 +419,20 @@ async fn create_inner(
         Ok(permit) => permit,
         Err(response) => return *response,
     };
+    call.hold_permit(permit);
+    if let Some(previous) = request.previous_response_id.as_deref() {
+        match localmux_storage::response_conversation(&state.pool, previous, &key.id).await {
+            Ok(Some(_)) => (),
+            Ok(None) => {
+                return error(
+                    StatusCode::NOT_FOUND,
+                    "LMX_SESSION_NOT_FOUND",
+                    "Previous response is no longer latest",
+                )
+            }
+            Err(_) => return super::recording::persistence_error(),
+        }
+    }
     let deadline = call.budget().deadline;
     let stream_idle = if context.adapter.kind() == localmux_domain::AdapterKind::Agent {
         call.budget().cli_idle_timeout
@@ -451,19 +465,24 @@ async fn create_inner(
                 return adapter_error(kind);
             }
             Err(_) => {
+                state.breaker.open(
+                    context.adapter.id(),
+                    Instant::now(),
+                    Duration::from_secs(30),
+                );
                 return call
                     .budget()
-                    .timeout_at(TimeoutLayer::GatewayStartup, Duration::from_secs(30))
+                    .timeout_at(TimeoutLayer::GatewayStartup, Duration::from_secs(30));
             }
         };
         drop(startup_timer);
-        let pool = state.pool.clone();
+
         let stream_state = state.clone();
         let owner_key_id = key.id.clone();
         let previous = request.previous_response_id;
         let store = request.store.unwrap_or(true);
         let events = async_stream::stream! {
-            let _permit = permit;
+
             let mut provider_stream = session.stream;
             let mut text = String::new();
             yield Ok::<Event, Infallible>(event("response.created", json!({"type":"response.created","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"object":"response","created_at":created,"status":"in_progress","model":context.model,"output":[]}})));
@@ -509,10 +528,8 @@ async fn create_inner(
                 return;
             }
             let native_id = session.provider_session_id.lock().await.clone().or(context.provider_session_id);
-            if store && !matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) && localmux_storage::save_response_mapping(&pool, localmux_storage::NewResponseMapping { owner_key_id: &owner_key_id, conversation_id: &context.conversation_id, response_id: &response_id, model_id: &context.model, adapter_id: context.adapter.id(), provider_session_id: native_id.as_deref(), previous_response_id: previous.as_deref(), created_at: created }).await.is_err() {
-                call.fail("LMX_INTERNAL_ERROR");
-                yield Ok(event("response.failed", json!({"type":"response.failed","sequence_number":call.budget().next_sequence(),"response":{"id":response_id,"status":"failed","error":{"code":"LMX_INTERNAL_ERROR","message":"Session persistence failed"}}})));
-                return;
+            if store && !matches!(result.finish_reason, FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter) {
+                call.stage_mapping(localmux_storage::NewResponseMapping { owner_key_id: owner_key_id.clone(), conversation_id: context.conversation_id.clone(), response_id: response_id.clone(), model_id: context.model.clone(), adapter_id: context.adapter.id().into(), provider_session_id: native_id, previous_response_id: previous.clone(), created_at: created });
             }
             call.result(&result);
             yield Ok(event("response.output_text.done", json!({"type":"response.output_text.done","sequence_number":call.budget().next_sequence(),"item_id":message_id,"output_index":0,"content_index":0,"text":text})));
@@ -568,27 +585,17 @@ async fn create_inner(
             result.metadata.finish_reason,
             FinishReason::Length | FinishReason::Cancelled | FinishReason::ContentFilter
         )
-        && localmux_storage::save_response_mapping(
-            &state.pool,
-            localmux_storage::NewResponseMapping {
-                owner_key_id: &key.id,
-                conversation_id: &context.conversation_id,
-                response_id: &response_id,
-                model_id: &context.model,
-                adapter_id: context.adapter.id(),
-                provider_session_id: native_id,
-                previous_response_id: request.previous_response_id.as_deref(),
-                created_at: created,
-            },
-        )
-        .await
-        .is_err()
     {
-        return error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "LMX_INTERNAL_ERROR",
-            "Session persistence failed",
-        );
+        call.stage_mapping(localmux_storage::NewResponseMapping {
+            owner_key_id: key.id.clone(),
+            conversation_id: context.conversation_id.clone(),
+            response_id: response_id.clone(),
+            model_id: context.model.clone(),
+            adapter_id: context.adapter.id().into(),
+            provider_session_id: native_id.map(str::to_owned),
+            previous_response_id: request.previous_response_id.clone(),
+            created_at: created,
+        });
     }
     if call.answer(&result.text).await.is_err() {
         return super::recording::persistence_error();

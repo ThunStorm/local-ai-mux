@@ -62,3 +62,5 @@ request_bytes 是 Gateway 收到的 JSON Body 字节；非流 response_bytes 是
 JSON保留全部公共元数据、diagnostics及消息数组/answer/state，去除owner_key_id；MD/TXT/HTML为阅读形式且附完整元数据，MD正文采用安全动态围栏、HTML全量转义并禁脚本/外部资源。CSV每调用一行，含record_json/messages_json/answer，UTF-8 BOM和RFC4180引号/换行，公式危险单元格前加单引号（精确保真优先JSON）。XLSX三表：Calls摘要、Content完整元数据及逐消息/回答、About筛选与说明；正文按最多30000 UTF-16单位拆段，call_id/message_index/part顺序可重组，无内容截断。数值在Excel可精确表达时写数字，其余文字均literal string，未知空白；过长摘要字段指向Content中完整record_json。UTC ISO字符串方便跨时区阅读，原Unix秒仍保留。
 
 导出最多10000条/64MiB源数据，编码结果最多256MiB；超限要求缩小范围。一次仅允许一个导出；用户通过原生保存窗口选本地路径，扩展名须匹配。后台转换后同目录临时文件写入、sync和原子替换，取消/生成失败/写入失败不覆盖已有文件，Unix输出0600，拒绝非普通目标（含符号链接）。正文和原始错误不进入日志，前端不接收批量正文，只返回条数/路径；没有新增HTTP导出端点。实现依赖[Tauri官方Dialog](https://docs.rs/tauri-plugin-dialog/latest/tauri_plugin_dialog/struct.FileDialogBuilder.html)与[rust_xlsxwriter](https://docs.rs/rust_xlsxwriter/latest/rust_xlsxwriter/workbook/struct.Workbook.html)。
+
+v0.3.1 在 Agent 取得连接执行权后复核父响应。成功的 Responses 映射、调用终态和正文终态共用一个 SQLite 事务，事务内再次校验父响应仍为最新。终态写入失败时保留上一个已提交的会话头。拒绝变更型号的事件沿用调用记录的型号过滤规则。

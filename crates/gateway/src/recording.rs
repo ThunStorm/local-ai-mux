@@ -9,12 +9,14 @@ use std::sync::{Arc, Mutex};
 use tokio::time::Instant;
 
 #[derive(Clone)]
-pub(crate) struct Call(
-    Option<Arc<Mutex<CallRecord>>>,
-    SqlitePool,
-    Arc<tokio::sync::Mutex<Option<ContentCapture>>>,
-    super::execution::ExecutionBudget,
-);
+pub(crate) struct Call {
+    record: Option<Arc<Mutex<CallRecord>>>,
+    pool: SqlitePool,
+    capture: Arc<tokio::sync::Mutex<Option<ContentCapture>>>,
+    budget: super::execution::ExecutionBudget,
+    mapping: Arc<Mutex<Option<localmux_storage::NewResponseMapping>>>,
+    permit: Arc<Mutex<Option<super::AgentPermit>>>,
+}
 struct ContentCapture {
     generation: i64,
     raw_answer: String,
@@ -49,21 +51,27 @@ fn redact_value(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 impl Call {
+    pub fn hold_permit(&self, permit: Option<super::AgentPermit>) {
+        *self.permit.lock().unwrap() = permit;
+    }
+    pub fn stage_mapping(&self, mapping: localmux_storage::NewResponseMapping) {
+        *self.mapping.lock().unwrap() = Some(mapping);
+    }
     pub fn budget(&self) -> super::execution::ExecutionBudget {
-        self.3.clone()
+        self.budget.clone()
     }
     pub async fn request(&self, messages: &serde_json::Value) -> anyhow::Result<()> {
-        let Some(record) = &self.0 else {
-            self.3.metrics.lock().unwrap().body_recording_enabled = Some(false);
+        let Some(record) = &self.record else {
+            self.budget.metrics.lock().unwrap().body_recording_enabled = Some(false);
             return Ok(());
         };
         let id = record.lock().unwrap().id.clone();
         let generation =
-            localmux_storage::start_content(&self.1, &id, &redact_value(messages).to_string())
+            localmux_storage::start_content(&self.pool, &id, &redact_value(messages).to_string())
                 .await?;
-        self.3.metrics.lock().unwrap().body_recording_enabled = Some(generation.is_some());
+        self.budget.metrics.lock().unwrap().body_recording_enabled = Some(generation.is_some());
         if let Some(generation) = generation {
-            *self.2.lock().await = Some(ContentCapture {
+            *self.capture.lock().await = Some(ContentCapture {
                 generation,
                 raw_answer: String::new(),
             });
@@ -72,22 +80,22 @@ impl Call {
     }
     pub fn first_output(&self, delta: &str) {
         if !delta.is_empty() {
-            self.3
+            self.budget
                 .metrics
                 .lock()
                 .unwrap()
                 .first_output_ms
-                .get_or_insert(self.3.elapsed_ms());
+                .get_or_insert(self.budget.elapsed_ms());
         }
     }
     pub fn normalization(&self, value: Option<&str>) {
-        self.3.metrics.lock().unwrap().normalization = value
+        self.budget.metrics.lock().unwrap().normalization = value
             .filter(|v| *v == "leading_instructions_v1")
             .map(str::to_owned);
     }
     pub async fn answer(&self, delta: &str) -> anyhow::Result<()> {
         {
-            let mut metrics = self.3.metrics.lock().unwrap();
+            let mut metrics = self.budget.metrics.lock().unwrap();
             metrics.output_text_bytes = Some(
                 metrics
                     .output_text_bytes
@@ -95,29 +103,29 @@ impl Call {
                     .saturating_add(delta.len() as u64),
             );
         }
-        let mut capture = self.2.lock().await;
+        let mut capture = self.capture.lock().await;
         let Some(content) = capture.as_mut() else {
             return Ok(());
         };
         content.raw_answer.push_str(delta);
-        let id = self.0.as_ref().unwrap().lock().unwrap().id.clone();
+        let id = self.record.as_ref().unwrap().lock().unwrap().id.clone();
         // ponytail: re-redact snapshots for cross-chunk credentials; move to a streaming sanitizer only if measured long-output latency warrants it.
-        let safe = localmux_telemetry::redact_credentials(&content.raw_answer);
-        if !localmux_storage::update_content(&self.1, &id, content.generation, &safe).await? {
+        let safe = localmux_telemetry::redact_credentials_snapshot(&content.raw_answer);
+        if !localmux_storage::update_content(&self.pool, &id, content.generation, &safe).await? {
             *capture = None;
         }
         Ok(())
     }
     fn terminal(&self) -> bool {
-        self.0
+        self.record
             .as_ref()
             .is_some_and(|record| record.lock().unwrap().status != "in_progress")
     }
     pub fn target(&self, model: &str, adapter: &str, response: &str, conversation: Option<&str>) {
         if !response.is_empty() {
-            *self.3.response_id.lock().unwrap() = Some(response.into());
+            *self.budget.response_id.lock().unwrap() = Some(response.into());
         }
-        if let Some(record) = &self.0 {
+        if let Some(record) = &self.record {
             let mut record = record.lock().unwrap();
             record.resolved_model = Some(safe_model(model));
             record.adapter_id = Some(safe_model(adapter));
@@ -129,7 +137,7 @@ impl Call {
     }
     pub fn metadata(&self, metadata: &ResponseMetadata) {
         let metadata = metadata.clone().validated();
-        let mut metrics = self.3.metrics.lock().unwrap();
+        let mut metrics = self.budget.metrics.lock().unwrap();
         metrics.finish_source = metadata.finish_source.clone();
         metrics.actual_model_source = metadata.actual_model_source.clone();
         metrics.usage_source = None;
@@ -147,7 +155,7 @@ impl Call {
             metrics.reported_cached_input_tokens = usage.cached_input_tokens;
         }
         drop(metrics);
-        if let Some(record) = &self.0 {
+        if let Some(record) = &self.record {
             let mut record = record.lock().unwrap();
             record.finish_reason = Some(
                 match metadata.finish_reason {
@@ -180,7 +188,7 @@ impl Call {
             return;
         }
         self.metadata(&metadata);
-        let mut metrics = self.3.metrics.lock().unwrap();
+        let mut metrics = self.budget.metrics.lock().unwrap();
         metrics.outcome = Some(
             match metadata.finish_reason {
                 FinishReason::Length => "INCOMPLETE",
@@ -191,7 +199,7 @@ impl Call {
             .into(),
         );
         drop(metrics);
-        if let Some(record) = &self.0 {
+        if let Some(record) = &self.record {
             record.lock().unwrap().status = match metadata.finish_reason {
                 FinishReason::Length => "truncated",
                 FinishReason::ContentFilter => "filtered",
@@ -203,7 +211,7 @@ impl Call {
     }
     pub fn fail(&self, code: &str) {
         {
-            let mut metrics = self.3.metrics.lock().unwrap();
+            let mut metrics = self.budget.metrics.lock().unwrap();
             metrics.outcome = Some(
                 if code == "LMX_STREAM_INTERRUPTED" {
                     "UNKNOWN_TERMINATION"
@@ -216,7 +224,7 @@ impl Call {
                 metrics.cancel_requested = true;
             }
         }
-        if let Some(record) = &self.0 {
+        if let Some(record) = &self.record {
             let mut record = record.lock().unwrap();
             record.status = match code {
                 "LMX_PROCESS_TIMEOUT" => "timeout",
@@ -239,7 +247,7 @@ impl Call {
         }
     }
 }
-fn safe_model(value: &str) -> String {
+pub(super) fn safe_model(value: &str) -> String {
     if !value.is_empty()
         && value.len() <= 160
         && !value.starts_with("lmx_")
@@ -270,7 +278,7 @@ impl CallGuard {
         streamed: bool,
         store: bool,
     ) -> anyhow::Result<Self> {
-        let call = if store {
+        let record = if store {
             let record = CallRecord {
                 sequence: 0,
                 id: format!("call_{}", uuid::Uuid::new_v4().simple()),
@@ -296,19 +304,17 @@ impl CallGuard {
                 request_id: None,
                 diagnostics: None,
             };
-            Call(
-                Some(Arc::new(Mutex::new(record))),
-                pool.clone(),
-                Arc::new(tokio::sync::Mutex::new(None)),
-                Default::default(),
-            )
+            Some(Arc::new(Mutex::new(record)))
         } else {
-            Call(
-                None,
-                pool.clone(),
-                Arc::new(tokio::sync::Mutex::new(None)),
-                Default::default(),
-            )
+            None
+        };
+        let call = Call {
+            record,
+            pool: pool.clone(),
+            capture: Default::default(),
+            budget: Default::default(),
+            mapping: Default::default(),
+            permit: Default::default(),
         };
         let guard = Self {
             call,
@@ -323,14 +329,14 @@ impl CallGuard {
     }
     pub fn with_budget(mut self, budget: super::execution::ExecutionBudget) -> Self {
         self.start = budget.accepted;
-        self.call.3 = budget;
+        self.call.budget = budget;
         self
     }
     pub fn call(&self) -> Call {
         self.call.clone()
     }
     fn snapshot(&self) -> Option<CallRecord> {
-        self.call.0.as_ref().map(|record| {
+        self.call.record.as_ref().map(|record| {
             let mut record = record.lock().unwrap().clone();
             if self.call.budget().expired()
                 && matches!(record.status.as_str(), "in_progress" | "completed")
@@ -390,8 +396,16 @@ impl CallGuard {
             .budget()
             .measure(super::execution::Phase::Finalize);
         if let Some(record) = self.snapshot() {
-            if let Err(error) = localmux_storage::finish_call(&self.pool, &record).await {
+            let mapping = self.call.mapping.lock().unwrap().clone();
+            if let Err(error) = localmux_storage::finish_call_with_mapping(
+                &self.pool,
+                &record,
+                mapping.as_ref().filter(|_| record.status == "completed"),
+            )
+            .await
+            {
                 self.call.fail("LMX_INTERNAL_ERROR");
+                self.call.mapping.lock().unwrap().take();
                 return Err(error);
             }
         }
@@ -399,8 +413,8 @@ impl CallGuard {
         Ok(())
     }
     pub async fn response(mut self, response: Response) -> Response {
-        self.call.3.metrics.lock().unwrap().http_status = Some(response.status().as_u16());
-        if self.call.0.is_none() {
+        self.call.budget.metrics.lock().unwrap().http_status = Some(response.status().as_u16());
+        if self.call.record.is_none() {
             self.persisted = true;
             return response;
         }
@@ -428,7 +442,7 @@ impl CallGuard {
                         | "agent_queue_timeout"
                         | "overall_deadline"
                 ) {
-                    self.call.3.metrics.lock().unwrap().reason_code = Some(reason.into());
+                    self.call.budget.metrics.lock().unwrap().reason_code = Some(reason.into());
                 }
             }
             self.call.fail(
@@ -453,7 +467,7 @@ impl CallGuard {
                 let mut guard = self;
                 while let Some(frame) = data.next().await {
                     if frame.is_err() { guard.call.fail("LMX_STREAM_INTERRUPTED"); }
-                    if let Ok(bytes) = &frame { let mut metrics = guard.call.3.metrics.lock().unwrap(); metrics.response_bytes = Some(metrics.response_bytes.unwrap_or(0).saturating_add(bytes.len() as u64)); metrics.response_bytes_scope = Some("through_first_terminal_frame".into()); }
+                    if let Ok(bytes) = &frame { let mut metrics = guard.call.budget.metrics.lock().unwrap(); metrics.response_bytes = Some(metrics.response_bytes.unwrap_or(0).saturating_add(bytes.len() as u64)); metrics.response_bytes_scope = Some("through_first_terminal_frame".into()); }
                     // Persist a known terminal result before forwarding its terminal frame.
                     // SDKs may stop polling immediately after completed / [DONE].
                     if !guard.persisted && guard.call.terminal() && guard.persist().await.is_err() {
@@ -477,7 +491,7 @@ impl CallGuard {
                 }
             };
             {
-                let mut metrics = self.call.3.metrics.lock().unwrap();
+                let mut metrics = self.call.budget.metrics.lock().unwrap();
                 metrics.response_bytes = Some(bytes.len() as u64);
                 metrics.response_bytes_scope = Some("buffered_body".into());
             }
@@ -492,6 +506,9 @@ impl Drop for CallGuard {
     fn drop(&mut self) {
         if self.persisted {
             return;
+        }
+        if self.call.mapping.lock().unwrap().is_some() {
+            self.call.fail("LMX_STREAM_INTERRUPTED");
         }
         if let (Some(record), Ok(runtime)) =
             (self.snapshot(), tokio::runtime::Handle::try_current())

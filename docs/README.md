@@ -1,10 +1,10 @@
 # LocalAiMux 文档导航
 
-当前产品版本 v0.3.0，Agent最短入口为根[AGENTS](../AGENTS.md)→[HANDOFF](HANDOFF.md)→对应专项。历史规划/测试只代表原采样日期，不覆盖当前契约。
+当前产品版本 v0.3.1，Agent最短入口为根[AGENTS](../AGENTS.md)→[HANDOFF](HANDOFF.md)→对应专项。历史规划/测试只代表原采样日期，不覆盖当前契约。
 
 | 类别 | 当前入口 |
 |---|---|
-| 用户使用/版本 | [中文说明](../README.zh-CN.md)、[English](../README.md)、[v0.3.0 版本说明](releases/V0_3_0.md)、[v0.2.0 封版](releases/V0_2_0_FREEZE.md) |
+| 用户使用/版本 | [中文说明](../README.zh-CN.md)、[产品说明](../README.md)、[v0.3.1 版本说明](releases/V0_3_1.md)、[v0.2.0 封版](releases/V0_2_0_FREEZE.md) |
 | 后续工作 | [TODO](TODO.md)，含优先级、依赖和验收方式 |
 | 产品与界面 | [Brief](BRIEF.md)、[支持矩阵](product/SUPPORTED_APPS.md)、[UX](product/UX_SPEC.md)、[macOS规范](product/MACOS_VISUAL_SPEC.md) |
 | API与计时 | [OpenAI兼容](api/OPENAI_COMPAT.md)、[Streaming](api/STREAMING.md)、[错误](api/ERROR_MODEL.md) |

@@ -78,12 +78,26 @@ pub async fn start_call(pool: &SqlitePool, record: &CallRecord) -> anyhow::Resul
 }
 
 pub async fn finish_call(pool: &SqlitePool, record: &CallRecord) -> anyhow::Result<()> {
+    finish_call_with_mapping(pool, record, None).await
+}
+pub async fn finish_call_with_mapping(
+    pool: &SqlitePool,
+    record: &CallRecord,
+    mapping: Option<&super::NewResponseMapping>,
+) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE call_records SET resolved_model=?,adapter_id=?,response_id=?,conversation_id=?,finished_at=?,elapsed_ms=?,status=?,error_code=?,finish_reason=?,actual_model=?,input_tokens=?,output_tokens=?,total_tokens=?,request_id=?,diagnostics=? WHERE id=? AND status='in_progress'")
+    let updated = sqlx::query("UPDATE call_records SET resolved_model=?,adapter_id=?,response_id=?,conversation_id=?,finished_at=?,elapsed_ms=?,status=?,error_code=?,finish_reason=?,actual_model=?,input_tokens=?,output_tokens=?,total_tokens=?,request_id=?,diagnostics=? WHERE id=? AND status='in_progress'")
         .bind(&record.resolved_model).bind(&record.adapter_id).bind(&record.response_id).bind(&record.conversation_id)
         .bind(record.finished_at).bind(record.elapsed_ms).bind(&record.status).bind(&record.error_code)
         .bind(&record.finish_reason).bind(&record.actual_model).bind(record.input_tokens).bind(record.output_tokens)
         .bind(record.total_tokens).bind(&record.request_id).bind(&record.diagnostics).bind(&record.id).execute(&mut *tx).await?;
+    if let Some(mapping) = mapping {
+        anyhow::ensure!(
+            updated.rows_affected() == 1 && record.status == "completed",
+            "invalid call state for response mapping"
+        );
+        super::insert_response_mapping(&mut tx, mapping).await?;
+    }
     sqlx::query("UPDATE call_contents SET state=? WHERE call_id=? AND state='recording'")
         .bind(if record.status == "completed" {
             "complete"

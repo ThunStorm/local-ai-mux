@@ -556,31 +556,51 @@ pub async fn response_conversation(
     })
     .transpose()
 }
-pub struct NewResponseMapping<'a> {
-    pub owner_key_id: &'a str,
-    pub conversation_id: &'a str,
-    pub response_id: &'a str,
-    pub model_id: &'a str,
-    pub adapter_id: &'a str,
-    pub provider_session_id: Option<&'a str>,
-    pub previous_response_id: Option<&'a str>,
+#[derive(Clone)]
+pub struct NewResponseMapping {
+    pub owner_key_id: String,
+    pub conversation_id: String,
+    pub response_id: String,
+    pub model_id: String,
+    pub adapter_id: String,
+    pub provider_session_id: Option<String>,
+    pub previous_response_id: Option<String>,
     pub created_at: i64,
 }
 pub async fn save_response_mapping(
     pool: &SqlitePool,
-    mapping: NewResponseMapping<'_>,
+    mapping: NewResponseMapping,
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
+    insert_response_mapping(&mut tx, &mapping).await?;
+    tx.commit().await?;
+    Ok(())
+}
+async fn insert_response_mapping(
+    tx: &mut sqlx::SqliteConnection,
+    mapping: &NewResponseMapping,
+) -> anyhow::Result<()> {
     let saved = sqlx::query("INSERT INTO conversations (id, model_id, adapter_id, created_at, last_active_at, owner_key_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_active_at=excluded.last_active_at WHERE conversations.owner_key_id=excluded.owner_key_id")
-        .bind(mapping.conversation_id).bind(mapping.model_id).bind(mapping.adapter_id).bind(mapping.created_at).bind(mapping.created_at).bind(mapping.owner_key_id).execute(&mut *tx).await?;
+        .bind(&mapping.conversation_id).bind(&mapping.model_id).bind(&mapping.adapter_id).bind(mapping.created_at).bind(mapping.created_at).bind(&mapping.owner_key_id).execute(&mut *tx).await?;
     if saved.rows_affected() != 1 {
         anyhow::bail!("conversation belongs to another API key");
     }
+    if let Some(previous) = &mapping.previous_response_id {
+        let latest: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM responses WHERE conversation_id=? ORDER BY rowid DESC LIMIT 1",
+        )
+        .bind(&mapping.conversation_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        anyhow::ensure!(
+            latest.as_ref() == Some(previous),
+            "response is no longer latest"
+        );
+    }
     sqlx::query("INSERT INTO provider_sessions (conversation_id, provider_session_id, resume_supported) VALUES (?, ?, ?) ON CONFLICT(conversation_id) DO UPDATE SET provider_session_id=COALESCE(excluded.provider_session_id, provider_sessions.provider_session_id), resume_supported=MAX(provider_sessions.resume_supported, excluded.resume_supported)")
-        .bind(mapping.conversation_id).bind(mapping.provider_session_id).bind(i64::from(mapping.provider_session_id.is_some())).execute(&mut *tx).await?;
+        .bind(&mapping.conversation_id).bind(&mapping.provider_session_id).bind(i64::from(mapping.provider_session_id.is_some())).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO responses (id, conversation_id, model_id, previous_response_id, created_at, status) VALUES (?, ?, ?, ?, ?, 'completed')")
-        .bind(mapping.response_id).bind(mapping.conversation_id).bind(mapping.model_id).bind(mapping.previous_response_id).bind(mapping.created_at).execute(&mut *tx).await?;
-    tx.commit().await?;
+        .bind(&mapping.response_id).bind(&mapping.conversation_id).bind(&mapping.model_id).bind(&mapping.previous_response_id).bind(mapping.created_at).execute(&mut *tx).await?;
     Ok(())
 }
 pub async fn list_conversations(pool: &SqlitePool) -> anyhow::Result<Vec<ConversationState>> {
@@ -627,12 +647,12 @@ mod session_storage_tests {
         save_response_mapping(
             &pool,
             NewResponseMapping {
-                owner_key_id: "key-a",
-                conversation_id: "conversation-test",
-                response_id: "resp-one",
-                model_id: "codex/model",
-                adapter_id: "codex",
-                provider_session_id: Some("native-id"),
+                owner_key_id: "key-a".into(),
+                conversation_id: "conversation-test".into(),
+                response_id: "resp-one".into(),
+                model_id: "codex/model".into(),
+                adapter_id: "codex".into(),
+                provider_session_id: Some("native-id".into()),
                 previous_response_id: None,
                 created_at: 100,
             },
@@ -652,13 +672,13 @@ mod session_storage_tests {
         save_response_mapping(
             &pool,
             NewResponseMapping {
-                owner_key_id: "key-a",
-                conversation_id: "conversation-test",
-                response_id: "resp-two",
-                model_id: "codex/model",
-                adapter_id: "codex",
+                owner_key_id: "key-a".into(),
+                conversation_id: "conversation-test".into(),
+                response_id: "resp-two".into(),
+                model_id: "codex/model".into(),
+                adapter_id: "codex".into(),
                 provider_session_id: None,
-                previous_response_id: Some("resp-one"),
+                previous_response_id: Some("resp-one".into()),
                 created_at: 101,
             },
         )
