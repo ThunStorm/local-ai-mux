@@ -40,10 +40,13 @@ jobs:
           app=target/release/bundle/macos/LocalAiMux.app
           test "$(lipo -archs "$app/Contents/MacOS/localmux-desktop")" = arm64
           ditto -c -k --sequesterRsrc --keepParent "$app" LocalAiMux-macos-arm64.zip
+          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > release-notes.md
       - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64
-          path: LocalAiMux-macos-arm64.zip
+          path: |
+            LocalAiMux-macos-arm64.zip
+            release-notes.md
           if-no-files-found: error
 
   publish:
@@ -61,6 +64,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$GITHUB_REF_NAME" LocalAiMux-macos-arm64.zip \
-            --verify-tag --prerelease --title "LocalAiMux $GITHUB_REF_NAME" --notes-from-tag
+            --verify-tag --prerelease --title "LocalAiMux $GITHUB_REF_NAME" --notes-file release-notes.md
           gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,tagName,url,assets \
             | jq -e --arg tag "$GITHUB_REF_NAME" 'select(.tagName == $tag and .isPrerelease and (.isDraft | not) and any(.assets[]; .name == "LocalAiMux-macos-arm64.zip"))'
