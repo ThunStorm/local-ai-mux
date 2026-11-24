@@ -12,10 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify source and tag
         run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git merge-base --is-ancestor HEAD origin/main
           test "$GITHUB_REF_NAME" = "v$(node -p 'require("./package.json").version')"
           test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
